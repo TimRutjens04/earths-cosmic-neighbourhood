@@ -163,7 +163,7 @@
         <input type="range" id="speed-slider" min="0" max="4" step="1" value="1">
       </div>
       <div class="ctrl-group">
-        <label><input type="checkbox" id="orbit-toggle" checked> Orbit lines</label>
+        <label><input type="checkbox" id="orbit-toggle"> Orbit lines</label>
       </div>
       <div class="btn-row">
         <button class="ctrl-btn" id="pause-btn">Pause</button>
@@ -352,7 +352,7 @@ let simT = (TODAY - J2000) / MS_PER_YEAR;
 let simPaused = false;
 let simSpeedIdx = 1;
 let neoFilter = 'all';
-let showOrbits = true;
+let showOrbits = false;
 let hoveredNEO = null;
 let clickedNEO = null;
 let apophisMode = false;
@@ -363,6 +363,13 @@ let neoLastFrame = null;
 let neoZoom = 1;
 let neoPanX = 0, neoPanY = 0;
 let neoDragging = false, neoDragStartX, neoDragStartY, neoDragMoved = false;
+
+// Performance: position cache + orbit offscreen canvas
+let posCache = null, posCacheT = null;
+let orbitCanvas = null, orbitCtx = null, orbitsDirty = true;
+// Pre-split NEOs by type at load time for fast batched rendering
+let phaNEOs = [], safeNEOs = [];
+const POS_THRESHOLD = 0.0002; // years — skip recompute below this delta
 
 function energyColor(e) {
   if (e < 1) return '#85B7EB';
@@ -384,19 +391,21 @@ function initNEO() {
   neoArea = document.getElementById('neo-canvas-area');
 
   apophisObj = neoData.find(n => n.name.toLowerCase().includes('apophis'));
+  phaNEOs  = neoData.filter(n => n.pha);
+  safeNEOs = neoData.filter(n => !n.pha);
 
   resizeNEO();
   new ResizeObserver(resizeNEO).observe(neoArea);
 
   // ── Controls ──
-  document.getElementById('neo-filter').addEventListener('change', e => { neoFilter = e.target.value; });
+  document.getElementById('neo-filter').addEventListener('change', e => { neoFilter = e.target.value; orbitsDirty = true; });
 
   document.getElementById('speed-slider').addEventListener('input', e => {
     simSpeedIdx = +e.target.value;
     document.getElementById('speed-label').textContent = '×' + SPEED_STEPS[simSpeedIdx];
   });
 
-  document.getElementById('orbit-toggle').addEventListener('change', e => { showOrbits = e.target.checked; });
+  document.getElementById('orbit-toggle').addEventListener('change', e => { showOrbits = e.target.checked; orbitsDirty = true; });
 
   document.getElementById('pause-btn').addEventListener('click', () => {
     simPaused = !simPaused;
@@ -428,12 +437,11 @@ function initNEO() {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.12 : 0.89;
     const rect = neoCanvas.getBoundingClientRect();
-    // Zoom toward cursor position
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const { cx, cy } = getViewport();
     neoPanX = mx - (mx - neoPanX) * factor;
     neoPanY = my - (my - neoPanY) * factor;
     neoZoom = Math.max(0.3, Math.min(20, neoZoom * factor));
+    orbitsDirty = true;
   }, { passive: false });
 
   // ── Pan (drag) ──
@@ -449,6 +457,7 @@ function initNEO() {
       neoPanX += e.clientX - neoDragStartX;
       neoPanY += e.clientY - neoDragStartY;
       neoDragStartX = e.clientX; neoDragStartY = e.clientY;
+      orbitsDirty = true;
     } else {
       // Hover only when not dragging
       const rect = neoCanvas.getBoundingClientRect();
@@ -486,6 +495,8 @@ function resizeNEO() {
   neoCanvas.style.width = w + 'px';
   neoCanvas.style.height = h + 'px';
   neoCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  orbitsDirty = true;
+  orbitCanvas = null; // will be recreated at correct size
 }
 
 function getViewport() {
@@ -592,21 +603,48 @@ function drawOrbitEllipse(ctx, a, e, wRad, cx, cy, scale, strokeStyle) {
   ctx.restore();
 }
 
-function drawNEO() {
-  const { w, h, cx, cy, scale } = getViewport();
-  const ctx = neoCtx;
-  ctx.clearRect(0, 0, w, h);
+function getCachedPositions() {
+  // Skip Kepler recompute if time barely moved (adaptive: always recompute at high speed)
+  const threshold = SPEED_STEPS[simSpeedIdx] > 10 ? 0 : POS_THRESHOLD;
+  if (posCache && posCacheT !== null && Math.abs(simT - posCacheT) < threshold) return posCache;
+  posCache = neoData.map(neo => neoPosition(neo, simT));
+  posCacheT = simT;
+  return posCache;
+}
+
+function ensureOrbitCanvas(w, h, cx, cy, scale) {
+  if (!orbitsDirty && orbitCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (!orbitCanvas) {
+    orbitCanvas = document.createElement('canvas');
+    orbitCtx = orbitCanvas.getContext('2d');
+  }
+  orbitCanvas.width = w * dpr;
+  orbitCanvas.height = h * dpr;
+  orbitCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  orbitCtx.clearRect(0, 0, w, h);
 
   if (showOrbits) {
     for (const neo of neoData) {
       if (neoFilter === 'pha' && !neo.pha) continue;
       if (neoFilter === 'safe' && neo.pha) continue;
-      if (neo === hoveredNEO || neo === clickedNEO) continue;
-      drawOrbitEllipse(ctx, neo.a, neo.e, neo.w * Math.PI / 180, cx, cy, scale,
-        neo.pha ? 'rgba(226,75,74,0.1)' : 'rgba(93,202,165,0.06)');
+      drawOrbitEllipse(orbitCtx, neo.a, neo.e, neo.w * Math.PI / 180, cx, cy, scale,
+        neo.pha ? 'rgba(226,75,74,0.12)' : 'rgba(93,202,165,0.07)');
     }
   }
+  orbitsDirty = false;
+}
 
+function drawNEO() {
+  const { w, h, cx, cy, scale } = getViewport();
+  const ctx = neoCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  // Blit pre-rendered orbit layer (cheap — one drawImage call)
+  ensureOrbitCanvas(w, h, cx, cy, scale);
+  if (orbitCanvas) ctx.drawImage(orbitCanvas, 0, 0, w, h);
+
+  // Planet orbit reference circles
   for (const p of PLANETS) {
     ctx.beginPath();
     ctx.arc(cx, cy, p.a * scale, 0, 2 * Math.PI);
@@ -623,6 +661,7 @@ function drawNEO() {
   ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
   ctx.fillStyle = sunGrad; ctx.fill();
 
+  // Planets
   for (const p of PLANETS) {
     const pos = planetPos(p.a, p.e, p.w, p.M0, p.T, simT);
     const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
@@ -633,47 +672,59 @@ function drawNEO() {
     ctx.fillText(p.name, sx + p.r + 3, sy + 4);
   }
 
-  for (const neo of neoData) {
-    if (neoFilter === 'pha' && !neo.pha) continue;
-    if (neoFilter === 'safe' && neo.pha) continue;
-    if (neo === hoveredNEO || neo === clickedNEO) continue;
-    const pos = neoPosition(neo, simT);
-    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
-    const r = neo.diam ? Math.max(1.5, Math.min(4, neo.diam * 0.7 + 1.5)) : 2;
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2 * Math.PI);
-    ctx.fillStyle = neo.pha ? 'rgba(226,75,74,0.8)' : 'rgba(93,202,165,0.55)';
-    ctx.fill();
-  }
-
+  const positions = getCachedPositions();
   const highlighted = clickedNEO || hoveredNEO;
+  const highlightIdx = highlighted ? neoData.indexOf(highlighted) : -1;
+
+  // Batch draw: one path for safe NEOs, one for PHAs — 2 fill() calls instead of 2000
+  const drawBatch = (list, fillColor, skip) => {
+    ctx.beginPath();
+    list.forEach((neo, li) => {
+      const idx = neoData.indexOf(neo);
+      if (idx === highlightIdx) return;
+      if (neoFilter === 'pha' && !neo.pha) return;
+      if (neoFilter === 'safe' && neo.pha) return;
+      const pos = positions[idx];
+      const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+      const r = neo.diam ? Math.max(1.5, Math.min(4, neo.diam * 0.7 + 1.5)) : 2;
+      ctx.moveTo(sx + r, sy);
+      ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+    });
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+  };
+
+  drawBatch(safeNEOs, 'rgba(93,202,165,0.55)');
+  drawBatch(phaNEOs, 'rgba(226,75,74,0.8)');
+
+  // Highlighted NEO on top
   if (highlighted) {
-    if (showOrbits) {
+    const pos = positions[highlightIdx];
+    if (pos) {
       drawOrbitEllipse(ctx, highlighted.a, highlighted.e, highlighted.w * Math.PI / 180, cx, cy, scale,
         highlighted.pha ? 'rgba(226,75,74,0.8)' : 'rgba(93,202,165,0.8)');
+      const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+      ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 2 * Math.PI);
+      ctx.fillStyle = highlighted.pha ? '#E24B4A' : '#5DCAA5'; ctx.fill();
     }
-    const pos = neoPosition(highlighted, simT);
-    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
-    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 2 * Math.PI);
-    ctx.fillStyle = highlighted.pha ? '#E24B4A' : '#5DCAA5'; ctx.fill();
   }
 
+  // Apophis label
   if (apophisObj) {
-    const pos = neoPosition(apophisObj, simT);
-    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
-    ctx.fillStyle = '#E24B4A'; ctx.font = 'bold 10px system-ui';
-    ctx.fillText('Apophis', sx + 9, sy - 4);
+    const idx = neoData.indexOf(apophisObj);
+    const pos = positions[idx];
+    if (pos) {
+      const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+      ctx.fillStyle = '#E24B4A'; ctx.font = 'bold 10px system-ui';
+      ctx.fillText('Apophis', sx + 9, sy - 4);
+    }
   }
 
-  // Zoom hint (fades if zoomed)
-  if (neoZoom < 1.2) {
-    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '11px system-ui';
-    ctx.fillText('Scroll to zoom · Drag to pan', 12, h - 12);
-  } else {
-    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.font = '11px system-ui';
-    ctx.fillText(`Zoom ×${neoZoom.toFixed(1)}`, 12, h - 12);
-  }
+  // Zoom hint
+  ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '11px system-ui';
+  ctx.fillText(neoZoom > 1.15 ? `Zoom ×${neoZoom.toFixed(1)}` : 'Scroll to zoom · Drag to pan', 12, h - 12);
 }
 
 // ============================================================
