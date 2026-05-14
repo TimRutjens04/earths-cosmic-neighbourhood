@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Earth's Cosmic Neighbourhood</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a14;
+    --ui-bg: #13131f;
+    --ui-border: #2a2a3f;
+    --text: #e0e0f0;
+    --text-dim: #888aaa;
+    --accent: #378ADD;
+    --col-pha: #E24B4A;
+    --col-neo: #5DCAA5;
+    --col-low: #85B7EB;
+    --col-mid: #EF9F27;
+    --col-high: #E24B4A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; overflow-x: hidden; }
+
+  /* ── Intro overlay ── */
+  #intro-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(5,5,15,0.93);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #intro-card {
+    background: var(--ui-bg); border: 1px solid var(--ui-border);
+    border-radius: 16px; padding: 40px 44px; max-width: 540px; text-align: center;
+  }
+  #intro-card h2 { font-size: 22px; margin-bottom: 8px; }
+  #intro-card .tagline { color: var(--text-dim); font-size: 13px; margin-bottom: 24px; }
+  .intro-views { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; text-align: left; }
+  .intro-view { background: #1a1a2e; border: 1px solid var(--ui-border); border-radius: 10px; padding: 14px; }
+  .intro-view h3 { font-size: 13px; margin-bottom: 6px; }
+  .intro-view p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .intro-view .view-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 4px; margin-bottom: 8px; font-weight: 600; }
+  #intro-start { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 12px 32px; font-size: 15px; cursor: pointer; font-weight: 600; transition: opacity .15s; }
+  #intro-start:hover { opacity: 0.85; }
+
+  /* ── Nav ── */
+  nav { display: flex; gap: 4px; padding: 10px 16px; background: var(--ui-bg); border-bottom: 1px solid var(--ui-border); align-items: center; }
+  nav h1 { font-size: 13px; color: var(--text-dim); margin-right: 12px; font-weight: 400; }
+  nav button { background: none; border: 1px solid var(--ui-border); color: var(--text-dim); padding: 6px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all .15s; }
+  nav button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  nav .nav-hint { margin-left: auto; font-size: 11px; color: var(--text-dim); }
+
+  section { display: none; }
+  section.active { display: block; }
+
+  .view-layout { display: grid; grid-template-columns: 220px 1fr; height: calc(100vh - 45px); }
+  .sidebar { background: var(--ui-bg); border-right: 1px solid var(--ui-border); padding: 14px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .canvas-area { position: relative; background: var(--bg); overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .stat-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card { background: #1a1a2e; border: 1px solid var(--ui-border); border-radius: 8px; padding: 8px 10px; }
+  .card-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .card-value { font-size: 18px; font-weight: 600; margin-top: 2px; }
+
+  .ctrl-group { display: flex; flex-direction: column; gap: 5px; }
+  .ctrl-group label { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  select, input[type=range] { width: 100%; background: #1a1a2e; border: 1px solid var(--ui-border); color: var(--text); border-radius: 5px; padding: 4px 6px; }
+  input[type=range] { padding: 0; accent-color: var(--accent); cursor: pointer; }
+  select { cursor: pointer; }
+  .btn-row { display: flex; gap: 6px; }
+  button.ctrl-btn { flex: 1; background: #1a1a2e; border: 1px solid var(--ui-border); color: var(--text); padding: 6px 8px; border-radius: 5px; cursor: pointer; font-size: 12px; transition: all .15s; }
+  button.ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+  button.ctrl-btn.highlight { background: rgba(226,75,74,0.15); border-color: var(--col-pha); color: var(--col-pha); }
+  button.ctrl-btn.highlight:hover { background: var(--col-pha); color: #fff; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; background: rgba(10,10,20,.95);
+    border: 1px solid var(--ui-border); border-radius: 8px; padding: 10px 13px;
+    font-size: 12px; line-height: 1.7; max-width: 230px; display: none; z-index: 10;
+  }
+  .tooltip.visible { display: block; }
+  .tooltip strong { color: var(--accent); }
+
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--ui-border); border-top: 1px solid var(--ui-border); height: 155px; }
+  .chart-panel { background: var(--ui-bg); padding: 8px 12px; }
+  .chart-panel h3 { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+
+  .legend { display: flex; flex-direction: column; gap: 5px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  #apophis-dist { font-size: 11px; color: var(--col-pha); font-weight: 600; min-height: 16px; }
+
+  .section-title { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .07em; border-bottom: 1px solid var(--ui-border); padding-bottom: 4px; }
+
+  /* Chelyabinsk callout card */
+  .chely-callout {
+    background: rgba(226,75,74,0.08); border: 1px solid rgba(226,75,74,0.35);
+    border-radius: 8px; padding: 10px 12px; font-size: 11px; line-height: 1.6;
+  }
+  .chely-callout strong { color: var(--col-pha); }
+  .chely-callout .chely-stat { color: var(--col-mid); font-weight: 600; }
+
+  /* axis text */
+  .tick text { fill: #888aaa !important; font-size: 9px !important; }
+  .domain, .tick line { stroke: #2a2a3f !important; }
+</style>
+</head>
+<body>
+
+<!-- ======================== INTRO OVERLAY ======================== -->
+<div id="intro-overlay">
+  <div id="intro-card">
+    <h2>Earth's Cosmic Neighbourhood</h2>
+    <p class="tagline">Visualising near-Earth space debris and atmospheric impacts · NASA data</p>
+    <div class="intro-views">
+      <div class="intro-view">
+        <div class="view-badge" style="background:rgba(55,138,221,0.2);color:#378ADD">Orbital Sim</div>
+        <h3>~2,000 Near-Earth Objects</h3>
+        <p>Live Keplerian orbital mechanics. See where every tracked NEO is right now, which are hazardous, and watch Apophis pass within 32,000 km of Earth on 13 Apr 2029.</p>
+      </div>
+      <div class="intro-view">
+        <div class="view-badge" style="background:rgba(226,75,74,0.2);color:#E24B4A">Fireball Globe</div>
+        <h3>354 Atmospheric Impacts</h3>
+        <p>Every fireball detected by US sensors since 1988, animated chronologically on a draggable globe. Includes the 440 kt Chelyabinsk event — larger than any nuclear test since 1971.</p>
+      </div>
+    </div>
+    <button id="intro-start" onclick="closeIntro()">Explore &rarr;</button>
+  </div>
+</div>
+
+<nav>
+  <h1>Earth's Cosmic Neighbourhood</h1>
+  <button class="active" onclick="switchTab('neo')">Orbital Sim</button>
+  <button onclick="switchTab('fireball')">Fireball Globe</button>
+  <span class="nav-hint">NASA JPL data · Scroll/pinch to zoom · Drag to rotate</span>
+</nav>
+
+<!-- ======================== VIEW 1: NEO SIM ======================== -->
+<section id="view-neo" class="active">
+  <div class="view-layout">
+    <div class="sidebar">
+      <div class="section-title">Stats</div>
+      <div class="stat-cards">
+        <div class="card"><div class="card-label">NEOs</div><div class="card-value" id="neo-count">—</div></div>
+        <div class="card"><div class="card-label">PHAs</div><div class="card-value" style="color:var(--col-pha)" id="pha-count">—</div></div>
+        <div class="card" style="grid-column:1/-1"><div class="card-label">Simulated Date</div><div class="card-value" style="font-size:13px" id="sim-date">—</div></div>
+        <div class="card" style="grid-column:1/-1"><div class="card-label">Hovered Object</div><div class="card-value" style="font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="hovered-name">—</div></div>
+      </div>
+
+      <div class="section-title">Controls</div>
+      <div class="ctrl-group">
+        <label>Filter</label>
+        <select id="neo-filter">
+          <option value="all">All NEOs</option>
+          <option value="pha">PHAs only</option>
+          <option value="safe">Non-hazardous only</option>
+        </select>
+      </div>
+      <div class="ctrl-group">
+        <label>Speed: <span id="speed-label">×1</span> yr/s</label>
+        <input type="range" id="speed-slider" min="0" max="4" step="1" value="1">
+      </div>
+      <div class="ctrl-group">
+        <label><input type="checkbox" id="orbit-toggle" checked> Orbit lines</label>
+      </div>
+      <div class="btn-row">
+        <button class="ctrl-btn" id="pause-btn">Pause</button>
+        <button class="ctrl-btn" id="reset-btn">Reset</button>
+      </div>
+      <button class="ctrl-btn highlight" id="apophis-btn">&#9733; Apophis 2029</button>
+      <div id="apophis-dist"></div>
+
+      <div class="section-title">Legend</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--col-pha)"></div>Potentially Hazardous (PHA)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--col-neo)"></div>Non-hazardous NEO</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#fff9a0;width:14px;height:14px"></div>Sun</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#B4B2A9"></div>Mercury</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>Venus</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#378ADD"></div>Earth</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#D85A30"></div>Mars</div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:auto">
+        Scroll to zoom &middot; Drag to pan<br>
+        Hover NEOs for details &middot; Click to pin
+      </div>
+    </div>
+
+    <div class="canvas-area" id="neo-canvas-area">
+      <canvas id="neo-canvas"></canvas>
+      <div class="tooltip" id="neo-tooltip"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== VIEW 2: FIREBALL GLOBE ======================== -->
+<section id="view-fireball">
+  <div style="display:grid;grid-template-columns:220px 1fr;grid-template-rows:1fr 155px;height:calc(100vh - 45px)">
+    <div class="sidebar" style="grid-row:1/3">
+      <div class="section-title">Stats</div>
+      <div class="stat-cards">
+        <div class="card" style="grid-column:1/-1"><div class="card-label">Events shown</div><div class="card-value" id="fb-count">—</div></div>
+        <div class="card" style="grid-column:1/-1"><div class="card-label">Max energy</div><div class="card-value" style="font-size:14px" id="fb-max">—</div></div>
+        <div class="card" style="grid-column:1/-1"><div class="card-label">Date range</div><div class="card-value" style="font-size:11px;color:var(--text-dim)" id="fb-range">—</div></div>
+      </div>
+
+      <div class="section-title">Controls</div>
+      <div class="ctrl-group">
+        <label>Min energy: <span id="energy-label">0</span> kt</label>
+        <input type="range" id="energy-slider" min="0" max="100" step="1" value="0">
+      </div>
+      <div class="ctrl-group">
+        <label>Timeline: <span id="fb-date-label" style="color:var(--text)">—</span></label>
+        <input type="range" id="fb-timeline" min="0" max="1000" step="1" value="0">
+      </div>
+      <div class="ctrl-group">
+        <label>Playback speed: <span id="fb-speed-label">×1</span></label>
+        <input type="range" id="fb-speed-slider" min="0" max="3" step="1" value="1">
+      </div>
+      <div class="btn-row">
+        <button class="ctrl-btn" id="fb-play-btn">Pause</button>
+        <button class="ctrl-btn" id="fb-reset-btn">Reset</button>
+      </div>
+
+      <div class="section-title">Chelyabinsk 2013</div>
+      <div class="chely-callout">
+        <strong>&#9888; Largest impact since Tunguska</strong><br>
+        <span class="chely-stat">440 kt</span> — bigger than any nuclear test since 1971.<br>
+        Injured <span class="chely-stat">1,500 people</span> via shockwave over Chelyabinsk, Russia on 15 Feb 2013.<br>
+        Approached from the Sun's direction — completely undetected beforehand.
+      </div>
+
+      <div class="section-title">Legend</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--col-low)"></div>&lt; 1 kt</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--col-mid)"></div>1 – 10 kt</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--col-high)"></div>&gt; 10 kt</div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:auto">
+        Drag to rotate &middot; Scroll to zoom<br>
+        Touch-drag supported &middot; Click to pin tooltip
+      </div>
+    </div>
+
+    <div class="canvas-area" id="globe-canvas-area" style="grid-column:2;grid-row:1">
+      <canvas id="globe-canvas"></canvas>
+      <div class="tooltip" id="fb-tooltip"></div>
+    </div>
+
+    <div class="charts-row" style="grid-column:2;grid-row:2">
+      <div class="chart-panel">
+        <h3>Energy distribution (log scale)</h3>
+        <svg id="energy-histogram"></svg>
+      </div>
+      <div class="chart-panel">
+        <h3>Events per month</h3>
+        <svg id="seasonal-bar"></svg>
+      </div>
+      <div class="chart-panel">
+        <h3>Events per year</h3>
+        <svg id="yearly-bar"></svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+// ============================================================
+// === SHARED STATE ===
+// ============================================================
+const TODAY = new Date();
+let neoData = [], fireballData = [], worldData = null;
+let globeInitialised = false;
+
+function closeIntro() {
+  document.getElementById('intro-overlay').style.display = 'none';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('nav button').forEach((b, i) =>
+    b.classList.toggle('active', (tab === 'neo' ? 0 : 1) === i));
+  document.getElementById('view-neo').classList.toggle('active', tab === 'neo');
+  document.getElementById('view-fireball').classList.toggle('active', tab === 'fireball');
+  if (tab === 'fireball' && !globeInitialised) initGlobe();
+}
+
+// ============================================================
+// === DATA LOADING ===
+// ============================================================
+Promise.all([
+  fetch('data/neos.json').then(r => r.json()),
+  fetch('data/fireballs.json').then(r => r.json()),
+  fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json()),
+]).then(([neos, fireballs, world]) => {
+  neoData = neos;
+  fireballData = fireballs;
+  worldData = world;
+  initNEO();
+  buildCompanionCharts(fireballs);
+}).catch(err => console.error('Data load failed:', err));
+
+// ============================================================
+// === ORBITAL MECHANICS ===
+// ============================================================
+function solveKepler(M, e) {
+  let E = M;
+  for (let i = 0; i < 5; i++) E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+  return E;
+}
+
+function trueAnomaly(E, e) {
+  return 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+}
+
+function neoPosition(neo, t) {
+  const M = (neo.M0 * Math.PI / 180) + (2 * Math.PI / neo.T) * t;
+  const E = solveKepler(((M % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), Math.min(neo.e, 0.98));
+  const v = trueAnomaly(E, neo.e);
+  const r = neo.a * (1 - neo.e * neo.e) / (1 + neo.e * Math.cos(v));
+  const w = neo.w * Math.PI / 180;
+  return { x: r * Math.cos(v + w), y: r * Math.sin(v + w) };
+}
+
+function planetPos(a, e, w, M0, T, t) {
+  const M = ((M0 + (2 * Math.PI / T) * t) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  const E = solveKepler(M, e);
+  const v = trueAnomaly(E, e);
+  const r = a * (1 - e * e) / (1 + e * Math.cos(v));
+  return { x: r * Math.cos(v + w), y: r * Math.sin(v + w) };
+}
+
+// ============================================================
+// === NEO SIMULATION ===
+// ============================================================
+const PLANETS = [
+  { name: 'Mercury', a: 0.387, e: 0.206, w: 1.352, M0: 3.057, T: 0.2408, color: '#B4B2A9', r: 3 },
+  { name: 'Venus',   a: 0.723, e: 0.007, w: 2.296, M0: 0.874, T: 0.6152, color: '#EF9F27', r: 4 },
+  { name: 'Earth',   a: 1.000, e: 0.017, w: 1.796, M0: 6.240, T: 1.0000, color: '#378ADD', r: 5 },
+  { name: 'Mars',    a: 1.524, e: 0.093, w: 5.865, M0: 0.338, T: 1.8809, color: '#D85A30', r: 4 },
+];
+
+const J2000 = Date.UTC(2000, 0, 1, 12, 0, 0);
+const MS_PER_YEAR = 365.25 * 24 * 3600 * 1000;
+const SPEED_STEPS = [0.1, 1, 10, 100, 1000];
+
+let neoCanvas, neoCtx, neoArea;
+let simT = (TODAY - J2000) / MS_PER_YEAR;
+let simPaused = false;
+let simSpeedIdx = 1;
+let neoFilter = 'all';
+let showOrbits = true;
+let hoveredNEO = null;
+let clickedNEO = null;
+let apophisMode = false;
+let apophisObj = null;
+let neoLastFrame = null;
+
+// Zoom / pan state for NEO canvas
+let neoZoom = 1;
+let neoPanX = 0, neoPanY = 0;
+let neoDragging = false, neoDragStartX, neoDragStartY, neoDragMoved = false;
+
+function energyColor(e) {
+  if (e < 1) return '#85B7EB';
+  if (e < 10) return '#EF9F27';
+  return '#E24B4A';
+}
+
+function energyToRadius(e) {
+  return 3 + 5 * Math.log10(1 + e);
+}
+
+function auToScreen(x, y, cx, cy, scale) {
+  return { sx: cx + x * scale, sy: cy - y * scale };
+}
+
+function initNEO() {
+  neoCanvas = document.getElementById('neo-canvas');
+  neoCtx = neoCanvas.getContext('2d');
+  neoArea = document.getElementById('neo-canvas-area');
+
+  apophisObj = neoData.find(n => n.name.toLowerCase().includes('apophis'));
+
+  resizeNEO();
+  new ResizeObserver(resizeNEO).observe(neoArea);
+
+  // ── Controls ──
+  document.getElementById('neo-filter').addEventListener('change', e => { neoFilter = e.target.value; });
+
+  document.getElementById('speed-slider').addEventListener('input', e => {
+    simSpeedIdx = +e.target.value;
+    document.getElementById('speed-label').textContent = '×' + SPEED_STEPS[simSpeedIdx];
+  });
+
+  document.getElementById('orbit-toggle').addEventListener('change', e => { showOrbits = e.target.checked; });
+
+  document.getElementById('pause-btn').addEventListener('click', () => {
+    simPaused = !simPaused;
+    document.getElementById('pause-btn').textContent = simPaused ? 'Play' : 'Pause';
+    if (!simPaused) { neoLastFrame = null; requestAnimationFrame(neoLoop); }
+  });
+
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    simT = (TODAY - J2000) / MS_PER_YEAR;
+    apophisMode = false;
+    neoZoom = 1; neoPanX = 0; neoPanY = 0;
+    document.getElementById('apophis-dist').textContent = '';
+    simPaused = false;
+    document.getElementById('pause-btn').textContent = 'Pause';
+  });
+
+  document.getElementById('apophis-btn').addEventListener('click', () => {
+    simT = (Date.UTC(2029, 3, 13) - J2000) / MS_PER_YEAR;
+    simSpeedIdx = 1;
+    document.getElementById('speed-slider').value = 1;
+    document.getElementById('speed-label').textContent = '×1';
+    apophisMode = true; simPaused = false;
+    document.getElementById('pause-btn').textContent = 'Pause';
+    neoLastFrame = null;
+  });
+
+  // ── Zoom (scroll wheel) ──
+  neoCanvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 0.89;
+    const rect = neoCanvas.getBoundingClientRect();
+    // Zoom toward cursor position
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const { cx, cy } = getViewport();
+    neoPanX = mx - (mx - neoPanX) * factor;
+    neoPanY = my - (my - neoPanY) * factor;
+    neoZoom = Math.max(0.3, Math.min(20, neoZoom * factor));
+  }, { passive: false });
+
+  // ── Pan (drag) ──
+  neoCanvas.addEventListener('mousedown', e => {
+    neoDragging = true; neoDragMoved = false;
+    neoDragStartX = e.clientX; neoDragStartY = e.clientY;
+  });
+  window.addEventListener('mouseup', () => { neoDragging = false; });
+  window.addEventListener('mousemove', e => {
+    if (neoDragging) {
+      const dx = e.clientX - neoDragStartX, dy = e.clientY - neoDragStartY;
+      if (Math.hypot(dx, dy) > 3) neoDragMoved = true;
+      neoPanX += e.clientX - neoDragStartX;
+      neoPanY += e.clientY - neoDragStartY;
+      neoDragStartX = e.clientX; neoDragStartY = e.clientY;
+    } else {
+      // Hover only when not dragging
+      const rect = neoCanvas.getBoundingClientRect();
+      onNEOHover(e.clientX - rect.left, e.clientY - rect.top);
+    }
+  });
+
+  neoCanvas.addEventListener('mouseleave', () => {
+    if (!clickedNEO) {
+      hoveredNEO = null;
+      document.getElementById('neo-tooltip').classList.remove('visible');
+      document.getElementById('hovered-name').textContent = '—';
+    }
+  });
+
+  neoCanvas.addEventListener('click', e => {
+    if (neoDragMoved) return; // was a pan, not a click
+    const rect = neoCanvas.getBoundingClientRect();
+    const found = findNEOAt(e.clientX - rect.left, e.clientY - rect.top);
+    clickedNEO = (found && found === clickedNEO) ? null : found;
+    if (!clickedNEO) document.getElementById('neo-tooltip').classList.remove('visible');
+  });
+
+  document.getElementById('neo-count').textContent = neoData.length.toLocaleString();
+  document.getElementById('pha-count').textContent = neoData.filter(n => n.pha).length.toLocaleString();
+
+  requestAnimationFrame(neoLoop);
+}
+
+function resizeNEO() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = neoArea.clientWidth, h = neoArea.clientHeight;
+  neoCanvas.width = w * dpr;
+  neoCanvas.height = h * dpr;
+  neoCanvas.style.width = w + 'px';
+  neoCanvas.style.height = h + 'px';
+  neoCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function getViewport() {
+  const w = neoArea.clientWidth, h = neoArea.clientHeight;
+  const baseScale = Math.min(w, h) / 2 / 2.2;
+  return {
+    w, h,
+    cx: w / 2 + neoPanX,
+    cy: h / 2 + neoPanY,
+    scale: baseScale * neoZoom,
+  };
+}
+
+function findNEOAt(mx, my) {
+  const { cx, cy, scale } = getViewport();
+  let closest = null, minDist = 12;
+  for (const neo of neoData) {
+    if (neoFilter === 'pha' && !neo.pha) continue;
+    if (neoFilter === 'safe' && neo.pha) continue;
+    const pos = neoPosition(neo, simT);
+    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+    const d = Math.hypot(sx - mx, sy - my);
+    if (d < minDist) { minDist = d; closest = neo; }
+  }
+  return closest;
+}
+
+function onNEOHover(mx, my) {
+  if (neoDragging) return;
+  const found = findNEOAt(mx, my);
+  const { cx, cy, scale } = getViewport();
+
+  if (found) {
+    hoveredNEO = found;
+    document.getElementById('hovered-name').textContent = found.name;
+    const pos = neoPosition(found, simT);
+    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+    showNEOTooltip(found, sx, sy);
+  } else if (!clickedNEO) {
+    hoveredNEO = null;
+    document.getElementById('neo-tooltip').classList.remove('visible');
+    document.getElementById('hovered-name').textContent = '—';
+  }
+}
+
+function showNEOTooltip(neo, sx, sy) {
+  const tip = document.getElementById('neo-tooltip');
+  const { w } = getViewport();
+  const diamStr = neo.diam
+    ? (neo.diam < 1 ? (neo.diam * 1000).toFixed(0) + ' m' : neo.diam.toFixed(2) + ' km')
+    : 'unknown';
+  tip.innerHTML =
+    `<strong>${neo.name}</strong><br>
+     ${neo.pha
+       ? '<span style="color:var(--col-pha)">&#9888; Potentially Hazardous</span>'
+       : '<span style="color:var(--col-neo)">Non-hazardous</span>'}<br>
+     Semi-major axis: ${neo.a.toFixed(3)} AU<br>
+     Eccentricity: ${neo.e.toFixed(3)}<br>
+     Diameter: ~${diamStr}<br>
+     ${neo.miss ? 'Min miss dist: ' + neo.miss.toFixed(4) + ' AU' : ''}`;
+  const tipW = 230;
+  tip.style.left = (sx + 15 + tipW > w ? sx - tipW - 10 : sx + 15) + 'px';
+  tip.style.top = Math.max(0, sy - 20) + 'px';
+  tip.classList.add('visible');
+}
+
+function neoLoop(ts) {
+  if (!simPaused) {
+    if (neoLastFrame !== null) {
+      const dt = Math.min((ts - neoLastFrame) / 1000, 0.1);
+      simT += dt * SPEED_STEPS[simSpeedIdx];
+    }
+    neoLastFrame = ts;
+  }
+
+  drawNEO();
+
+  if (apophisMode && apophisObj) {
+    const earthP = PLANETS[2];
+    const ePos = planetPos(earthP.a, earthP.e, earthP.w, earthP.M0, earthP.T, simT);
+    const aPos = neoPosition(apophisObj, simT);
+    const distKm = Math.hypot(ePos.x - aPos.x, ePos.y - aPos.y) * 149597870.7;
+    document.getElementById('apophis-dist').textContent =
+      'Earth–Apophis: ' + Math.round(distKm).toLocaleString() + ' km';
+  }
+
+  const simDate = new Date(J2000 + simT * MS_PER_YEAR);
+  document.getElementById('sim-date').textContent = simDate.toISOString().slice(0, 10);
+
+  requestAnimationFrame(neoLoop);
+}
+
+function drawOrbitEllipse(ctx, a, e, wRad, cx, cy, scale, strokeStyle) {
+  const b = a * Math.sqrt(1 - e * e);
+  const focus = a * e;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-wRad);
+  ctx.beginPath();
+  ctx.ellipse(-focus * scale, 0, a * scale, b * scale, 0, 0, 2 * Math.PI);
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawNEO() {
+  const { w, h, cx, cy, scale } = getViewport();
+  const ctx = neoCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  if (showOrbits) {
+    for (const neo of neoData) {
+      if (neoFilter === 'pha' && !neo.pha) continue;
+      if (neoFilter === 'safe' && neo.pha) continue;
+      if (neo === hoveredNEO || neo === clickedNEO) continue;
+      drawOrbitEllipse(ctx, neo.a, neo.e, neo.w * Math.PI / 180, cx, cy, scale,
+        neo.pha ? 'rgba(226,75,74,0.1)' : 'rgba(93,202,165,0.06)');
+    }
+  }
+
+  for (const p of PLANETS) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, p.a * scale, 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Sun
+  const sunGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 18);
+  sunGrad.addColorStop(0, '#fff9a0');
+  sunGrad.addColorStop(0.4, 'rgba(255,230,80,0.8)');
+  sunGrad.addColorStop(1, 'rgba(255,180,40,0)');
+  ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
+  ctx.fillStyle = sunGrad; ctx.fill();
+
+  for (const p of PLANETS) {
+    const pos = planetPos(p.a, p.e, p.w, p.M0, p.T, simT);
+    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+    ctx.beginPath(); ctx.arc(sx, sy, p.r, 0, 2 * Math.PI);
+    ctx.fillStyle = p.color; ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '10px system-ui';
+    ctx.fillText(p.name, sx + p.r + 3, sy + 4);
+  }
+
+  for (const neo of neoData) {
+    if (neoFilter === 'pha' && !neo.pha) continue;
+    if (neoFilter === 'safe' && neo.pha) continue;
+    if (neo === hoveredNEO || neo === clickedNEO) continue;
+    const pos = neoPosition(neo, simT);
+    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+    const r = neo.diam ? Math.max(1.5, Math.min(4, neo.diam * 0.7 + 1.5)) : 2;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+    ctx.fillStyle = neo.pha ? 'rgba(226,75,74,0.8)' : 'rgba(93,202,165,0.55)';
+    ctx.fill();
+  }
+
+  const highlighted = clickedNEO || hoveredNEO;
+  if (highlighted) {
+    if (showOrbits) {
+      drawOrbitEllipse(ctx, highlighted.a, highlighted.e, highlighted.w * Math.PI / 180, cx, cy, scale,
+        highlighted.pha ? 'rgba(226,75,74,0.8)' : 'rgba(93,202,165,0.8)');
+    }
+    const pos = neoPosition(highlighted, simT);
+    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 2 * Math.PI);
+    ctx.fillStyle = highlighted.pha ? '#E24B4A' : '#5DCAA5'; ctx.fill();
+  }
+
+  if (apophisObj) {
+    const pos = neoPosition(apophisObj, simT);
+    const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
+    ctx.fillStyle = '#E24B4A'; ctx.font = 'bold 10px system-ui';
+    ctx.fillText('Apophis', sx + 9, sy - 4);
+  }
+
+  // Zoom hint (fades if zoomed)
+  if (neoZoom < 1.2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '11px system-ui';
+    ctx.fillText('Scroll to zoom · Drag to pan', 12, h - 12);
+  } else {
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.font = '11px system-ui';
+    ctx.fillText(`Zoom ×${neoZoom.toFixed(1)}`, 12, h - 12);
+  }
+}
+
+// ============================================================
+// === FIREBALL GLOBE ===
+// ============================================================
+let globeCanvas, globeCtx, globeArea;
+let projection, geoPath;
+let fbPaused = false;
+const FB_SPEED_STEPS = [0.5, 1, 5, 20];
+let fbSpeedIdx = 1;
+let fbTime = 0;
+let fbLastFrame = null;
+let fbMinEnergy = 0;
+let fbClickedEvent = null;
+let sortedEvents = [];
+let globeRotation = [20, -25];
+let globeZoom = 1;
+let globeDragging = false, globeLastX, globeLastY;
+
+function initGlobe() {
+  globeInitialised = true;
+  globeCanvas = document.getElementById('globe-canvas');
+  globeCtx = globeCanvas.getContext('2d');
+  globeArea = document.getElementById('globe-canvas-area');
+
+  sortedEvents = [...fireballData].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  resizeGlobe();
+  new ResizeObserver(resizeGlobe).observe(globeArea);
+
+  projection = d3.geoOrthographic().clipAngle(90).rotate(globeRotation);
+  updateGlobeProjection();
+  geoPath = d3.geoPath(projection, globeCtx);
+
+  // ── Mouse drag ──
+  globeCanvas.addEventListener('mousedown', e => {
+    globeDragging = true; globeLastX = e.clientX; globeLastY = e.clientY;
+  });
+  window.addEventListener('mouseup', () => { globeDragging = false; });
+  window.addEventListener('mousemove', e => {
+    if (!globeDragging) return;
+    applyGlobeDrag(e.clientX - globeLastX, e.clientY - globeLastY);
+    globeLastX = e.clientX; globeLastY = e.clientY;
+  });
+
+  // ── Touch drag ──
+  let lastTouch = null;
+  globeCanvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    lastTouch = e.touches[0];
+    globeDragging = true;
+  }, { passive: false });
+  globeCanvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!lastTouch) return;
+    const t = e.touches[0];
+    applyGlobeDrag(t.clientX - lastTouch.clientX, t.clientY - lastTouch.clientY);
+    lastTouch = t;
+  }, { passive: false });
+  globeCanvas.addEventListener('touchend', () => { globeDragging = false; lastTouch = null; });
+
+  // ── Zoom (wheel) ──
+  globeCanvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    globeZoom *= e.deltaY < 0 ? 1.1 : 0.91;
+    globeZoom = Math.max(0.4, Math.min(6, globeZoom));
+    updateGlobeProjection();
+  }, { passive: false });
+
+  // ── Hover + click ──
+  globeCanvas.addEventListener('mousemove', e => {
+    if (globeDragging || fbClickedEvent) return;
+    const rect = globeCanvas.getBoundingClientRect();
+    onGlobeHover(e.clientX - rect.left, e.clientY - rect.top);
+  });
+  globeCanvas.addEventListener('mouseleave', () => {
+    if (!fbClickedEvent) document.getElementById('fb-tooltip').classList.remove('visible');
+  });
+  globeCanvas.addEventListener('click', e => {
+    const rect = globeCanvas.getBoundingClientRect();
+    const found = findFBAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (found) {
+      fbClickedEvent = (found === fbClickedEvent) ? null : found;
+      if (fbClickedEvent) showFBTooltip(fbClickedEvent, e.clientX - rect.left, e.clientY - rect.top);
+      else document.getElementById('fb-tooltip').classList.remove('visible');
+    } else {
+      fbClickedEvent = null;
+      document.getElementById('fb-tooltip').classList.remove('visible');
+    }
+  });
+
+  // ── Controls ──
+  document.getElementById('energy-slider').addEventListener('input', e => {
+    fbMinEnergy = +e.target.value;
+    document.getElementById('energy-label').textContent = fbMinEnergy;
+    updateFBStats();
+  });
+
+  // Timeline seek bar
+  document.getElementById('fb-timeline').addEventListener('input', e => {
+    fbTime = +e.target.value / 1000;
+    fbLastFrame = null; // prevent jump when resuming
+  });
+
+  document.getElementById('fb-speed-slider').addEventListener('input', e => {
+    fbSpeedIdx = +e.target.value;
+    document.getElementById('fb-speed-label').textContent = '×' + FB_SPEED_STEPS[fbSpeedIdx];
+  });
+  document.getElementById('fb-play-btn').addEventListener('click', () => {
+    fbPaused = !fbPaused;
+    document.getElementById('fb-play-btn').textContent = fbPaused ? 'Play' : 'Pause';
+    if (!fbPaused) { fbLastFrame = null; requestAnimationFrame(globeLoop); }
+  });
+  document.getElementById('fb-reset-btn').addEventListener('click', () => {
+    fbTime = 0; fbLastFrame = null; fbPaused = false;
+    document.getElementById('fb-play-btn').textContent = 'Pause';
+    document.getElementById('fb-timeline').value = 0;
+    document.getElementById('fb-date-label').textContent = '—';
+  });
+
+  updateFBStats();
+  requestAnimationFrame(globeLoop);
+}
+
+function applyGlobeDrag(dx, dy) {
+  globeRotation[0] += dx * 0.4;
+  globeRotation[1] = Math.max(-90, Math.min(90, globeRotation[1] - dy * 0.4));
+  projection.rotate(globeRotation);
+}
+
+function updateGlobeProjection() {
+  if (!projection || !globeArea) return;
+  const w = globeArea.clientWidth, h = globeArea.clientHeight;
+  projection.scale(Math.min(w, h) * 0.42 * globeZoom).translate([w / 2, h / 2]);
+  if (geoPath) geoPath = d3.geoPath(projection, globeCtx);
+}
+
+function resizeGlobe() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = globeArea.clientWidth, h = globeArea.clientHeight;
+  globeCanvas.width = w * dpr; globeCanvas.height = h * dpr;
+  globeCanvas.style.width = w + 'px'; globeCanvas.style.height = h + 'px';
+  globeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  updateGlobeProjection();
+}
+
+function updateFBStats() {
+  const visible = sortedEvents.filter(e => e.energy >= fbMinEnergy);
+  document.getElementById('fb-count').textContent = visible.length.toLocaleString();
+  if (visible.length) {
+    const maxE = Math.max(...visible.map(e => e.energy));
+    document.getElementById('fb-max').textContent = maxE >= 1 ? maxE.toFixed(1) + ' kt' : (maxE * 1000).toFixed(0) + ' t';
+  }
+  const dates = sortedEvents.map(e => e.date && e.date.slice(0, 4)).filter(Boolean);
+  if (dates.length) document.getElementById('fb-range').textContent = dates[0] + ' – ' + dates[dates.length - 1];
+}
+
+function visibleEvents() {
+  const cutoff = Math.ceil(fbTime * sortedEvents.length);
+  return sortedEvents.slice(0, cutoff).filter(e => e.energy >= fbMinEnergy);
+}
+
+function findFBAt(mx, my) {
+  let closest = null, minDist = 14;
+  for (const ev of visibleEvents()) {
+    const pt = projection([ev.lon, ev.lat]);
+    if (!pt) continue;
+    const d = Math.hypot(pt[0] - mx, pt[1] - my);
+    if (d < minDist) { minDist = d; closest = ev; }
+  }
+  return closest;
+}
+
+function onGlobeHover(mx, my) {
+  const found = findFBAt(mx, my);
+  if (found) showFBTooltip(found, mx, my);
+  else document.getElementById('fb-tooltip').classList.remove('visible');
+}
+
+function showFBTooltip(ev, x, y) {
+  const tip = document.getElementById('fb-tooltip');
+  const isChelyabinsk = ev.date && ev.date.startsWith('2013-02-15');
+  tip.innerHTML =
+    `<strong>${ev.date ? ev.date.slice(0, 10) : 'Unknown date'}</strong>
+     ${isChelyabinsk ? '<br><span style="color:var(--col-high)">&#9888; Chelyabinsk Event</span>' : ''}<br>
+     Energy: <strong>${ev.energy} kt TNT</strong><br>
+     Lat: ${ev.lat.toFixed(1)}°, Lon: ${ev.lon.toFixed(1)}°
+     ${ev.vel ? '<br>Velocity: ' + ev.vel.toFixed(1) + ' km/s' : ''}
+     ${ev.alt ? '<br>Altitude: ' + ev.alt.toFixed(1) + ' km' : ''}`;
+  const w = globeArea.clientWidth;
+  tip.style.left = (x + 15 + 230 > w ? x - 240 : x + 15) + 'px';
+  tip.style.top = Math.max(0, y - 20) + 'px';
+  tip.classList.add('visible');
+}
+
+function globeLoop(ts) {
+  if (!fbPaused) {
+    if (fbLastFrame !== null) {
+      const dt = Math.min((ts - fbLastFrame) / 1000, 0.1);
+      fbTime = Math.min(1, fbTime + dt * FB_SPEED_STEPS[fbSpeedIdx] * 0.012);
+    }
+    fbLastFrame = ts;
+  }
+
+  // Sync timeline seek bar and date label
+  document.getElementById('fb-timeline').value = Math.round(fbTime * 1000);
+  const cutoff = Math.ceil(fbTime * sortedEvents.length);
+  if (cutoff > 0 && cutoff <= sortedEvents.length) {
+    document.getElementById('fb-date-label').textContent = sortedEvents[cutoff - 1].date.slice(0, 10);
+  }
+
+  drawGlobe();
+  requestAnimationFrame(globeLoop);
+}
+
+function drawGlobe() {
+  const w = globeArea.clientWidth, h = globeArea.clientHeight;
+  const ctx = globeCtx;
+  ctx.clearRect(0, 0, w, h);
+  if (!projection || !worldData) return;
+
+  const sphere = { type: 'Sphere' };
+  ctx.beginPath(); geoPath(sphere); ctx.fillStyle = '#0d1b2e'; ctx.fill();
+  ctx.beginPath(); geoPath(d3.geoGraticule()()); ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 0.5; ctx.stroke();
+  ctx.beginPath(); geoPath(topojson.feature(worldData, worldData.objects.countries));
+  ctx.fillStyle = '#162040'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 0.5; ctx.stroke();
+  ctx.beginPath(); geoPath(sphere); ctx.strokeStyle = 'rgba(100,140,200,0.3)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  for (const ev of visibleEvents()) {
+    const pt = projection([ev.lon, ev.lat]);
+    if (!pt) continue;
+    ctx.beginPath(); ctx.arc(pt[0], pt[1], energyToRadius(ev.energy), 0, 2 * Math.PI);
+    ctx.fillStyle = energyColor(ev.energy); ctx.globalAlpha = 0.75; ctx.fill(); ctx.globalAlpha = 1;
+  }
+
+  // Chelyabinsk callout on globe
+  const chely = sortedEvents.find(e => e.date && e.date.startsWith('2013-02-15'));
+  if (chely && fbTime * sortedEvents.length >= sortedEvents.indexOf(chely)) {
+    const pt = projection([chely.lon, chely.lat]);
+    if (pt) {
+      const r = energyToRadius(chely.energy);
+      ctx.beginPath(); ctx.arc(pt[0], pt[1], r + 5, 0, 2 * Math.PI);
+      ctx.strokeStyle = '#E24B4A'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui';
+      ctx.fillText('Chelyabinsk 2013', pt[0] + r + 6, pt[1] - 5);
+      ctx.font = '10px system-ui'; ctx.fillStyle = '#EF9F27';
+      ctx.fillText('440 kt · 1,500 injured', pt[0] + r + 6, pt[1] + 8);
+    }
+  }
+}
+
+// ============================================================
+// === COMPANION CHARTS ===
+// ============================================================
+function buildCompanionCharts(events) {
+  requestAnimationFrame(() => {
+    drawEnergyHistogram(events);
+    drawSeasonalBar(events);
+    drawYearlyBar(events);
+  });
+}
+
+function drawEnergyHistogram(events) {
+  const container = document.getElementById('energy-histogram').parentElement;
+  const W = container.clientWidth || 280, H = 130;
+  const m = { top: 8, right: 10, bottom: 26, left: 30 };
+  const w = W - m.left - m.right, h = H - m.top - m.bottom;
+  const svg = d3.select('#energy-histogram').attr('width', W).attr('height', H);
+  const logE = events.map(e => Math.log10(Math.max(0.001, e.energy)));
+  const x = d3.scaleLinear().domain([-3, 3]).range([0, w]);
+  const bins = d3.bin().domain(x.domain()).thresholds(x.ticks(24))(logE);
+  const y = d3.scaleLinear().domain([0, d3.max(bins, b => b.length)]).range([h, 0]);
+  const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
+  g.selectAll('rect').data(bins).join('rect')
+    .attr('x', d => x(d.x0) + 1).attr('width', d => Math.max(0, x(d.x1) - x(d.x0) - 1))
+    .attr('y', d => y(d.length)).attr('height', d => h - y(d.length))
+    .attr('fill', d => energyColor(Math.pow(10, (d.x0 + d.x1) / 2)));
+  g.append('g').attr('transform', `translate(0,${h})`).call(d3.axisBottom(x).ticks(5).tickFormat(d => `10^${d}`));
+  g.append('g').call(d3.axisLeft(y).ticks(3));
+  const cx = x(Math.log10(440));
+  g.append('line').attr('x1', cx).attr('x2', cx).attr('y1', 0).attr('y2', h)
+    .attr('stroke', '#E24B4A').attr('stroke-dasharray', '3,2').attr('stroke-width', 1.5);
+  g.append('text').attr('x', cx + 3).attr('y', 12).attr('fill', '#E24B4A').style('font-size', '9px').text('Chelyabinsk');
+}
+
+function drawSeasonalBar(events) {
+  const container = document.getElementById('seasonal-bar').parentElement;
+  const W = container.clientWidth || 280, H = 130;
+  const m = { top: 8, right: 10, bottom: 26, left: 26 };
+  const w = W - m.left - m.right, h = H - m.top - m.bottom;
+  const svg = d3.select('#seasonal-bar').attr('width', W).attr('height', H);
+  const months = Array.from({ length: 12 }, (_, i) => ({ m: i, count: 0 }));
+  for (const ev of events) {
+    const mo = parseInt((ev.date || '').slice(5, 7), 10) - 1;
+    if (mo >= 0 && mo < 12) months[mo].count++;
+  }
+  const x = d3.scaleBand().domain(months.map(d => d.m)).range([0, w]).padding(0.12);
+  const y = d3.scaleLinear().domain([0, d3.max(months, d => d.count)]).range([h, 0]);
+  const LABELS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+  const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
+  g.selectAll('rect').data(months).join('rect')
+    .attr('x', d => x(d.m)).attr('width', x.bandwidth())
+    .attr('y', d => y(d.count)).attr('height', d => h - y(d.count))
+    .attr('fill', '#378ADD').attr('opacity', 0.8);
+  g.append('g').attr('transform', `translate(0,${h})`).call(d3.axisBottom(x).tickFormat(i => LABELS[i]));
+  g.append('g').call(d3.axisLeft(y).ticks(3));
+}
+
+function drawYearlyBar(events) {
+  const container = document.getElementById('yearly-bar').parentElement;
+  const W = container.clientWidth || 280, H = 130;
+  const m = { top: 8, right: 10, bottom: 26, left: 28 };
+  const w = W - m.left - m.right, h = H - m.top - m.bottom;
+  const svg = d3.select('#yearly-bar').attr('width', W).attr('height', H);
+
+  const yearCounts = {};
+  for (const ev of events) {
+    const yr = (ev.date || '').slice(0, 4);
+    if (yr) yearCounts[yr] = (yearCounts[yr] || 0) + 1;
+  }
+  const years = Object.keys(yearCounts).sort();
+  const data = years.map(yr => ({ yr, count: yearCounts[yr] }));
+
+  const x = d3.scaleBand().domain(years).range([0, w]).padding(0.08);
+  const y = d3.scaleLinear().domain([0, d3.max(data, d => d.count)]).range([h, 0]);
+
+  const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
+
+  // Colour bars by era: pre-2008 (older sensors) dimmer, post-2008 brighter
+  g.selectAll('rect').data(data).join('rect')
+    .attr('x', d => x(d.yr)).attr('width', x.bandwidth())
+    .attr('y', d => y(d.count)).attr('height', d => h - y(d.count))
+    .attr('fill', d => +d.yr >= 2008 ? '#5DCAA5' : '#378ADD')
+    .attr('opacity', 0.85);
+
+  // Sensor upgrade annotation
+  const upgradeX = x('2008');
+  if (upgradeX !== undefined) {
+    g.append('line').attr('x1', upgradeX).attr('x2', upgradeX).attr('y1', 0).attr('y2', h)
+      .attr('stroke', '#EF9F27').attr('stroke-dasharray', '3,2').attr('stroke-width', 1);
+    g.append('text').attr('x', upgradeX + 2).attr('y', 10)
+      .attr('fill', '#EF9F27').style('font-size', '8px').text('Sensors upgraded');
+  }
+
+  // x-axis: show every ~4th year to avoid crowding
+  g.append('g').attr('transform', `translate(0,${h})`).call(
+    d3.axisBottom(x).tickValues(years.filter((_, i) => i % 4 === 0))
+  );
+  g.append('g').call(d3.axisLeft(y).ticks(3));
+}
+</script>
+</body>
+</html>

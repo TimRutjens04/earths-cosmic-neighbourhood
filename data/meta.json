@@ -1,0 +1,7 @@
+{
+  "fetched_at": "2026-05-14T09:09:15Z",
+  "fireball_count": 354,
+  "neo_count": 2000,
+  "fireball_source": "https://ssd-api.jpl.nasa.gov/fireball.api",
+  "neo_source": "https://api.nasa.gov/neo/rest/v1/neo/browse"
+}
