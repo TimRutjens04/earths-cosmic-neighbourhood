@@ -275,6 +275,7 @@
 const TODAY = new Date();
 let neoData = [], fireballData = [], worldData = null;
 let globeInitialised = false;
+let chartsBuilt = false;
 
 function closeIntro() {
   document.getElementById('intro-overlay').style.display = 'none';
@@ -285,7 +286,13 @@ function switchTab(tab) {
     b.classList.toggle('active', (tab === 'neo' ? 0 : 1) === i));
   document.getElementById('view-neo').classList.toggle('active', tab === 'neo');
   document.getElementById('view-fireball').classList.toggle('active', tab === 'fireball');
-  if (tab === 'fireball' && !globeInitialised) initGlobe();
+  // Reset timestamps so first frame after switch doesn't produce a stale dt burst
+  if (tab === 'neo') { neoLastFrame = null; }
+  if (tab === 'fireball') {
+    fbLastFrame = null;
+    if (!globeInitialised) initGlobe();
+    if (!chartsBuilt) { chartsBuilt = true; buildCompanionCharts(fireballData); }
+  }
 }
 
 // ============================================================
@@ -300,7 +307,7 @@ Promise.all([
   fireballData = fireballs;
   worldData = world;
   initNEO();
-  buildCompanionCharts(fireballs);
+  // Charts built lazily on first fireball tab open (section is hidden now, clientWidth = 0)
 }).catch(err => console.error('Data load failed:', err));
 
 // ============================================================
@@ -409,8 +416,8 @@ function initNEO() {
 
   document.getElementById('pause-btn').addEventListener('click', () => {
     simPaused = !simPaused;
+    neoLastFrame = null; // prevent dt burst on resume
     document.getElementById('pause-btn').textContent = simPaused ? 'Play' : 'Pause';
-    if (!simPaused) { neoLastFrame = null; requestAnimationFrame(neoLoop); }
   });
 
   document.getElementById('reset-btn').addEventListener('click', () => {
@@ -835,8 +842,8 @@ function initGlobe() {
   });
   document.getElementById('fb-play-btn').addEventListener('click', () => {
     fbPaused = !fbPaused;
+    fbLastFrame = null; // prevent dt burst on resume
     document.getElementById('fb-play-btn').textContent = fbPaused ? 'Play' : 'Pause';
-    if (!fbPaused) { fbLastFrame = null; requestAnimationFrame(globeLoop); }
   });
   document.getElementById('fb-reset-btn').addEventListener('click', () => {
     fbTime = 0; fbLastFrame = null; fbPaused = false;
