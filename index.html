@@ -123,7 +123,7 @@
       <div class="intro-view">
         <div class="view-badge" style="background:rgba(226,75,74,0.2);color:#E24B4A">Fireball Globe</div>
         <h3>354 Atmospheric Impacts</h3>
-        <p>Every fireball detected by US sensors since 1988, animated chronologically on a draggable globe. Includes the 440 kt Chelyabinsk event — larger than any nuclear test since 1971.</p>
+        <p>Every fireball detected by US sensors since 1988, animated chronologically on a draggable globe. Includes the 440 kt Chelyabinsk event (larger than any nuclear test since 1971)</p>
       </div>
     </div>
     <button id="intro-start" onclick="closeIntro()">Explore &rarr;</button>
@@ -159,11 +159,11 @@
         </select>
       </div>
       <div class="ctrl-group">
-        <label>Speed: <span id="speed-label">×1</span> yr/s</label>
-        <input type="range" id="speed-slider" min="0" max="4" step="1" value="1">
+        <label>Speed: <span id="speed-label">×0.1</span> yr/s</label>
+        <input type="range" id="speed-slider" min="0" max="6" step="1" value="2">
       </div>
       <div class="ctrl-group">
-        <label><input type="checkbox" id="orbit-toggle"> Orbit lines</label>
+        <label><input type="checkbox" id="orbit-toggle" checked> Orbit lines</label>
       </div>
       <div class="btn-row">
         <button class="ctrl-btn" id="pause-btn">Pause</button>
@@ -228,9 +228,9 @@
       <div class="section-title">Chelyabinsk 2013</div>
       <div class="chely-callout">
         <strong>&#9888; Largest impact since Tunguska</strong><br>
-        <span class="chely-stat">440 kt</span> — bigger than any nuclear test since 1971.<br>
+        <span class="chely-stat">440 kt</span> which was bigger than any nuclear test since 1971.<br>
         Injured <span class="chely-stat">1,500 people</span> via shockwave over Chelyabinsk, Russia on 15 Feb 2013.<br>
-        Approached from the Sun's direction — completely undetected beforehand.
+        Approached from the Sun's direction and was completely undetected beforehand.
       </div>
 
       <div class="section-title">Legend</div>
@@ -352,14 +352,14 @@ const PLANETS = [
 
 const J2000 = Date.UTC(2000, 0, 1, 12, 0, 0);
 const MS_PER_YEAR = 365.25 * 24 * 3600 * 1000;
-const SPEED_STEPS = [0.1, 1, 10, 100, 1000];
+const SPEED_STEPS = [0.001, 0.01, 0.1, 1, 10, 100, 1000];
 
 let neoCanvas, neoCtx, neoArea;
 let simT = (TODAY - J2000) / MS_PER_YEAR;
 let simPaused = false;
-let simSpeedIdx = 1;
+let simSpeedIdx = 2;
 let neoFilter = 'all';
-let showOrbits = false;
+let showOrbits = true;
 let hoveredNEO = null;
 let clickedNEO = null;
 let apophisMode = false;
@@ -390,6 +390,30 @@ function energyToRadius(e) {
 
 function auToScreen(x, y, cx, cy, scale) {
   return { sx: cx + x * scale, sy: cy - y * scale };
+}
+
+function findClosestApproach(neo) {
+  const earth = PLANETS[2];
+  const DAY = 1 / 365.25;
+  const HOUR = 1 / (365.25 * 24);
+  // Coarse scan: 2025–2035 in 1-day steps
+  const tStart = (Date.UTC(2025, 0, 1) - J2000) / MS_PER_YEAR;
+  const tEnd   = (Date.UTC(2035, 0, 1) - J2000) / MS_PER_YEAR;
+  let bestT = tStart, bestDist = Infinity;
+  for (let t = tStart; t <= tEnd; t += DAY) {
+    const e = planetPos(earth.a, earth.e, earth.w, earth.M0, earth.T, t);
+    const a = neoPosition(neo, t);
+    const d = Math.hypot(e.x - a.x, e.y - a.y);
+    if (d < bestDist) { bestDist = d; bestT = t; }
+  }
+  // Fine scan: ±2 days around coarse minimum in 1-hour steps
+  for (let t = bestT - 2 * DAY; t <= bestT + 2 * DAY; t += HOUR) {
+    const e = planetPos(earth.a, earth.e, earth.w, earth.M0, earth.T, t);
+    const a = neoPosition(neo, t);
+    const d = Math.hypot(e.x - a.x, e.y - a.y);
+    if (d < bestDist) { bestDist = d; bestT = t; }
+  }
+  return bestT;
 }
 
 function initNEO() {
@@ -430,13 +454,15 @@ function initNEO() {
   });
 
   document.getElementById('apophis-btn').addEventListener('click', () => {
-    simT = (Date.UTC(2029, 3, 13) - J2000) / MS_PER_YEAR;
-    simSpeedIdx = 1;
-    document.getElementById('speed-slider').value = 1;
-    document.getElementById('speed-label').textContent = '×1';
-    apophisMode = true; simPaused = false;
-    document.getElementById('pause-btn').textContent = 'Pause';
+    if (!apophisObj) return;
+    simT = findClosestApproach(apophisObj);
+    simSpeedIdx = 2;
+    document.getElementById('speed-slider').value = 2;
+    document.getElementById('speed-label').textContent = '×' + SPEED_STEPS[2];
+    apophisMode = true;
+    simPaused = true;
     neoLastFrame = null;
+    document.getElementById('pause-btn').textContent = 'Play';
   });
 
   // ── Zoom (scroll wheel) ──
