@@ -5,6 +5,9 @@
 For the DV Exercise I made a three-tab interactive dashboard visualising near-Earth space from three angles:
 what's out in space (orbital simulation), what got through to earth (fireball globe), and what might hit earth somewhere in the future (impact-risk matrix).
 
+## Small Note:
+After our previous discussion during the portfolio meeting it had become clear that I indeed generated the frontend, D3 part. I went and looked into the D3 library and updated some things myself, added some graphs in other tabs and stuff, but because I wanted to do something extra to kinda compensate (I guess?) I added a 3D viewer using a, for me totally new, library called Three.js. Let's just say this exercise reinforced in me that I don't wanna do any frontend stuff ever again 😅
+
 ---
 
 ## Project structure
@@ -13,9 +16,9 @@ what's out in space (orbital simulation), what got through to earth (fireball gl
 index.html: entire frontend (self-contained, no build step)
 fetch_data.py: data pipeline; run once to populate data/
 data/
-  neos.json: ~2 000 near-Earth objects with Keplerian orbital elements
+  neos.json: ~2000 near-Earth objects with Keplerian orbital elements
   fireballs.json: ~356 atmospheric impact events since 1988
-  sentry.json: 2 156 objects from NASA's impact-risk catalogue
+  sentry.json: 2156 objects from NASA's impact-risk catalogue
   meta.json: fetch timestamps and source URLs
 ```
 
