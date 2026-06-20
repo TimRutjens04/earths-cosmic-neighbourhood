@@ -6,6 +6,8 @@
 <title>Earth's Cosmic Neighbourhood</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <style>
   :root {
     --bg: #0a0a14;
@@ -23,7 +25,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; overflow-x: hidden; }
 
-  /* ── Intro overlay ── */
+  /* Intro overlay */
   #intro-overlay {
     position: fixed; inset: 0; z-index: 100;
     background: rgba(5,5,15,0.93);
@@ -31,11 +33,11 @@
   }
   #intro-card {
     background: var(--ui-bg); border: 1px solid var(--ui-border);
-    border-radius: 16px; padding: 40px 44px; max-width: 540px; text-align: center;
+    border-radius: 16px; padding: 40px 44px; max-width: 720px; text-align: center;
   }
   #intro-card h2 { font-size: 22px; margin-bottom: 8px; }
   #intro-card .tagline { color: var(--text-dim); font-size: 13px; margin-bottom: 24px; }
-  .intro-views { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; text-align: left; }
+  .intro-views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 28px; text-align: left; }
   .intro-view { background: #1a1a2e; border: 1px solid var(--ui-border); border-radius: 10px; padding: 14px; }
   .intro-view h3 { font-size: 13px; margin-bottom: 6px; }
   .intro-view p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
@@ -43,7 +45,7 @@
   #intro-start { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 12px 32px; font-size: 15px; cursor: pointer; font-weight: 600; transition: opacity .15s; }
   #intro-start:hover { opacity: 0.85; }
 
-  /* ── Nav ── */
+  /* Nav */
   nav { display: flex; gap: 4px; padding: 10px 16px; background: var(--ui-bg); border-bottom: 1px solid var(--ui-border); align-items: center; }
   nav h1 { font-size: 13px; color: var(--text-dim); margin-right: 12px; font-weight: 400; }
   nav button { background: none; border: 1px solid var(--ui-border); color: var(--text-dim); padding: 6px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all .15s; }
@@ -73,11 +75,12 @@
   button.ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
   button.ctrl-btn.highlight { background: rgba(226,75,74,0.15); border-color: var(--col-pha); color: var(--col-pha); }
   button.ctrl-btn.highlight:hover { background: var(--col-pha); color: #fff; }
+  button.ctrl-btn.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
 
   .tooltip {
     position: absolute; pointer-events: none; background: rgba(10,10,20,.95);
     border: 1px solid var(--ui-border); border-radius: 8px; padding: 10px 13px;
-    font-size: 12px; line-height: 1.7; max-width: 230px; display: none; z-index: 10;
+    font-size: 12px; line-height: 1.7; max-width: 240px; display: none; z-index: 10;
   }
   .tooltip.visible { display: block; }
   .tooltip strong { color: var(--accent); }
@@ -94,7 +97,6 @@
 
   .section-title { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .07em; border-bottom: 1px solid var(--ui-border); padding-bottom: 4px; }
 
-  /* Chelyabinsk callout card */
   .chely-callout {
     background: rgba(226,75,74,0.08); border: 1px solid rgba(226,75,74,0.35);
     border-radius: 8px; padding: 10px 12px; font-size: 11px; line-height: 1.6;
@@ -102,28 +104,46 @@
   .chely-callout strong { color: var(--col-pha); }
   .chely-callout .chely-stat { color: var(--col-mid); font-weight: 600; }
 
+  .risk-callout {
+    background: rgba(55,138,221,0.08); border: 1px solid rgba(55,138,221,0.3);
+    border-radius: 8px; padding: 10px 12px; font-size: 11px; line-height: 1.6; color: var(--text-dim);
+  }
+  .risk-callout strong { color: var(--accent); }
+
   /* axis text */
   .tick text { fill: #888aaa !important; font-size: 9px !important; }
   .domain, .tick line { stroke: #2a2a3f !important; }
+
+  /* 3D area fills same space as 2D canvas */
+  #neo-3d-area { position: absolute; inset: 0; display: none; }
+  #neo-3d-area canvas { width: 100% !important; height: 100% !important; }
+
+  /* Risk SVG fills canvas-area */
+  #risk-matrix { display: block; }
 </style>
 </head>
 <body>
 
-<!-- ======================== INTRO OVERLAY ======================== -->
+<!-- INTRO OVERLAY -->
 <div id="intro-overlay">
   <div id="intro-card">
     <h2>Earth's Cosmic Neighbourhood</h2>
-    <p class="tagline">Visualising near-Earth space debris and atmospheric impacts · NASA data</p>
+    <p class="tagline">Visualising near-Earth space debris, atmospheric impacts, and impact risk | NASA JPL data</p>
     <div class="intro-views">
       <div class="intro-view">
         <div class="view-badge" style="background:rgba(55,138,221,0.2);color:#378ADD">Orbital Sim</div>
         <h3>~2,000 Near-Earth Objects</h3>
-        <p>Live Keplerian orbital mechanics. See where every tracked NEO is right now, which are hazardous, and watch Apophis pass within 32,000 km of Earth on 13 Apr 2029.</p>
+        <p>Live Keplerian orbital mechanics in 2D and 3D. See where every tracked NEO is right now and watch Apophis pass within 32,000 km of Earth in 2029.</p>
       </div>
       <div class="intro-view">
         <div class="view-badge" style="background:rgba(226,75,74,0.2);color:#E24B4A">Fireball Globe</div>
-        <h3>354 Atmospheric Impacts</h3>
-        <p>Every fireball detected by US sensors since 1988, animated chronologically on a draggable globe. Includes the 440 kt Chelyabinsk event (larger than any nuclear test since 1971)</p>
+        <h3>356 Atmospheric Impacts</h3>
+        <p>Every fireball detected by US sensors since 1988, animated chronologically. Includes impacts many times more energetic than the Hiroshima bomb (~15 kt).</p>
+      </div>
+      <div class="intro-view">
+        <div class="view-badge" style="background:rgba(239,159,39,0.2);color:#EF9F27">Impact Risk</div>
+        <h3>2,156 Monitored Objects</h3>
+        <p>NASA Sentry impact-risk catalogue. Log-scale probability matrix showing which objects pose measurable risk — and why most probabilities are reassuringly small.</p>
       </div>
     </div>
     <button id="intro-start" onclick="closeIntro()">Explore &rarr;</button>
@@ -134,10 +154,11 @@
   <h1>Earth's Cosmic Neighbourhood</h1>
   <button class="active" onclick="switchTab('neo')">Orbital Sim</button>
   <button onclick="switchTab('fireball')">Fireball Globe</button>
+  <button onclick="switchTab('risk')">Impact Risk</button>
   <span class="nav-hint">NASA JPL data · Scroll/pinch to zoom · Drag to rotate</span>
 </nav>
 
-<!-- ======================== VIEW 1: NEO SIM ======================== -->
+<!-- VIEW 1: NEO SIM  -->
 <section id="view-neo" class="active">
   <div class="view-layout">
     <div class="sidebar">
@@ -166,6 +187,10 @@
         <label><input type="checkbox" id="orbit-toggle" checked> Orbit lines</label>
       </div>
       <div class="btn-row">
+        <button class="ctrl-btn selected" id="view-2d-btn" onclick="setNeoView('2d')">2D Top-Down</button>
+        <button class="ctrl-btn" id="view-3d-btn" onclick="setNeoView('3d')">3D Inclined</button>
+      </div>
+      <div class="btn-row">
         <button class="ctrl-btn" id="pause-btn">Pause</button>
         <button class="ctrl-btn" id="reset-btn">Reset</button>
       </div>
@@ -184,19 +209,21 @@
       </div>
 
       <div style="font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:auto">
-        Scroll to zoom &middot; Drag to pan<br>
-        Hover NEOs for details &middot; Click to pin
+        2D: Scroll to zoom | Drag to pan<br>
+        3D: Drag to orbit | Scroll to zoom<br>
+        Hover NEOs for details | Click to pin
       </div>
     </div>
 
     <div class="canvas-area" id="neo-canvas-area">
       <canvas id="neo-canvas"></canvas>
+      <div id="neo-3d-area"></div>
       <div class="tooltip" id="neo-tooltip"></div>
     </div>
   </div>
 </section>
 
-<!-- ======================== VIEW 2: FIREBALL GLOBE ======================== -->
+<!-- VIEW 2: FIREBALL GLOBE -->
 <section id="view-fireball">
   <div style="display:grid;grid-template-columns:220px 1fr;grid-template-rows:1fr 155px;height:calc(100vh - 45px)">
     <div class="sidebar" style="grid-row:1/3">
@@ -225,18 +252,18 @@
         <button class="ctrl-btn" id="fb-reset-btn">Reset</button>
       </div>
 
-      <div class="section-title">Chelyabinsk 2013</div>
+      <div class="section-title">Scale Reference</div>
       <div class="chely-callout">
-        <strong>&#9888; Largest impact since Tunguska</strong><br>
-        <span class="chely-stat">440 kt</span> which was bigger than any nuclear test since 1971.<br>
-        Injured <span class="chely-stat">1,500 people</span> via shockwave over Chelyabinsk, Russia on 15 Feb 2013.<br>
-        Approached from the Sun's direction and was completely undetected beforehand.
+        <strong>&#9888; Hiroshima bomb ≈ 15 kt</strong><br>
+        "Little Boy" dropped 6 Aug 1945 released <span class="chely-stat">~15 kt</span> TNT equivalent.<br>
+        Use this as your scale when comparing fireball energies in this dataset.<br>
+        Colour bands show &lt;1 kt (blue), 1-10 kt (amber), &gt;10 kt (red).
       </div>
 
       <div class="section-title">Legend</div>
       <div class="legend">
         <div class="legend-item"><div class="legend-dot" style="background:var(--col-low)"></div>&lt; 1 kt</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--col-mid)"></div>1 – 10 kt</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--col-mid)"></div>1 - 10 kt</div>
         <div class="legend-item"><div class="legend-dot" style="background:var(--col-high)"></div>&gt; 10 kt</div>
       </div>
 
@@ -268,51 +295,105 @@
   </div>
 </section>
 
+<!-- VIEW 3: IMPACT RISK -->
+<section id="view-risk">
+  <div class="view-layout">
+    <div class="sidebar">
+      <div class="section-title">Stats</div>
+      <div class="stat-cards">
+        <div class="card" style="grid-column:1/-1"><div class="card-label">Objects monitored</div><div class="card-value" id="risk-count">—</div></div>
+        <div class="card"><div class="card-label">Max Torino</div><div class="card-value" style="color:var(--col-mid)" id="risk-top-ts">—</div></div>
+        <div class="card"><div class="card-label">Max Palermo</div><div class="card-value" style="color:var(--col-mid)" id="risk-top-ps">—</div></div>
+        <div class="card" style="grid-column:1/-1"><div class="card-label">Nearest threat year</div><div class="card-value" id="risk-nearest">—</div></div>
+      </div>
+
+      <div class="section-title">Controls</div>
+      <div class="ctrl-group">
+        <label>Min probability: <span id="risk-ip-label">any</span></label>
+        <input type="range" id="risk-ip-slider" min="-10" max="-1" step="0.5" value="-10">
+      </div>
+      <div class="ctrl-group">
+        <label><input type="checkbox" id="risk-label-toggle"> Label top objects</label>
+      </div>
+
+      <div class="section-title">About this data</div>
+      <div class="risk-callout">
+        <strong>NASA Sentry impact-risk catalogue.</strong><br><br>
+        <strong>Palermo scale:</strong> compares impact probability to the "background" rate of random impacts. Palermo &lt; 0 means less risky than background. Most objects here have Palermo &lt; −2 (100× below background).<br><br>
+        <strong>JPL's own caveat:</strong> probabilities can be inaccurate by a factor of 10 or more — orbits are still being refined.<br><br>
+        <strong>Apophis</strong> appeared on this list for years. Better observations confirmed zero risk through 2116 — it was removed. Removal is the best possible outcome.
+      </div>
+
+      <div class="section-title">Legend</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#E24B4A"></div>Palermo &gt; 0 (above background)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>Palermo −2 to 0</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#85B7EB"></div>Palermo −4 to −2</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(80,80,110,0.6)"></div>Palermo &lt; −4</div>
+        <div class="legend-item" style="margin-top:4px"><div style="width:10px;height:10px;border:1.5px solid #fff;border-radius:50%;flex-shrink:0"></div>Torino ≥ 1</div>
+        <div class="legend-item" style="margin-top:4px;font-size:11px">Bubble size = estimated diameter</div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:auto">
+        Hover bubbles for details<br>
+        Click to pin tooltip
+      </div>
+    </div>
+
+    <div class="canvas-area" id="risk-area">
+      <svg id="risk-matrix"></svg>
+      <div class="tooltip" id="risk-tooltip"></div>
+    </div>
+  </div>
+</section>
+
 <script>
-// ============================================================
-// === SHARED STATE ===
-// ============================================================
+// SHARED STATE
 const TODAY = new Date();
-let neoData = [], fireballData = [], worldData = null;
+let neoData = [], fireballData = [], worldData = null, sentryData = [];
 let globeInitialised = false;
 let chartsBuilt = false;
+let riskBuilt = false;
+let neo3dMode = false;
 
 function closeIntro() {
   document.getElementById('intro-overlay').style.display = 'none';
 }
 
+const TAB_NAMES = ['neo', 'fireball', 'risk'];
+
 function switchTab(tab) {
   document.querySelectorAll('nav button').forEach((b, i) =>
-    b.classList.toggle('active', (tab === 'neo' ? 0 : 1) === i));
-  document.getElementById('view-neo').classList.toggle('active', tab === 'neo');
-  document.getElementById('view-fireball').classList.toggle('active', tab === 'fireball');
-  // Reset timestamps so first frame after switch doesn't produce a stale dt burst
+    b.classList.toggle('active', i < TAB_NAMES.length && TAB_NAMES[i] === tab));
+  TAB_NAMES.forEach(t =>
+    document.getElementById('view-' + t).classList.toggle('active', t === tab));
   if (tab === 'neo') { neoLastFrame = null; }
   if (tab === 'fireball') {
     fbLastFrame = null;
     if (!globeInitialised) initGlobe();
     if (!chartsBuilt) { chartsBuilt = true; buildCompanionCharts(fireballData); }
   }
+  if (tab === 'risk') {
+    if (!riskBuilt) { riskBuilt = true; requestAnimationFrame(() => buildRiskMatrix(sentryData)); }
+  }
 }
 
-// ============================================================
-// === DATA LOADING ===
-// ============================================================
+// DATA LOADING
+
 Promise.all([
   fetch('data/neos.json').then(r => r.json()),
   fetch('data/fireballs.json').then(r => r.json()),
   fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json()),
-]).then(([neos, fireballs, world]) => {
+  fetch('data/sentry.json').then(r => r.json()),
+]).then(([neos, fireballs, world, sentry]) => {
   neoData = neos;
   fireballData = fireballs;
   worldData = world;
+  sentryData = sentry;
   initNEO();
-  // Charts built lazily on first fireball tab open (section is hidden now, clientWidth = 0)
 }).catch(err => console.error('Data load failed:', err));
 
-// ============================================================
-// === ORBITAL MECHANICS ===
-// ============================================================
+// ORBITAL MECHANICS
 function solveKepler(M, e) {
   let E = M;
   for (let i = 0; i < 5; i++) E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
@@ -332,6 +413,27 @@ function neoPosition(neo, t) {
   return { x: r * Math.cos(v + w), y: r * Math.sin(v + w) };
 }
 
+// Full 3D position using inclination + ascending node (ignored in 2D path)
+function neoPosition3D(neo, t) {
+  const M = (neo.M0 * Math.PI / 180) + (2 * Math.PI / neo.T) * t;
+  const Mn = ((M % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const E = solveKepler(Mn, Math.min(neo.e, 0.98));
+  const v = trueAnomaly(E, neo.e);
+  const r = neo.a * (1 - neo.e * neo.e) / (1 + neo.e * Math.cos(v));
+  const theta = v + (neo.w * Math.PI / 180);
+  const xOrb = r * Math.cos(theta);
+  const yOrb = r * Math.sin(theta);
+  const inc = neo.i * Math.PI / 180;
+  const om = neo.omega * Math.PI / 180;
+  const cosOm = Math.cos(om), sinOm = Math.sin(om);
+  const cosI = Math.cos(inc), sinI = Math.sin(inc);
+  return {
+    x:  cosOm * xOrb - sinOm * cosI * yOrb,
+    y:  sinOm * xOrb + cosOm * cosI * yOrb,
+    z:  sinI * yOrb,
+  };
+}
+
 function planetPos(a, e, w, M0, T, t) {
   const M = ((M0 + (2 * Math.PI / T) * t) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
   const E = solveKepler(M, e);
@@ -340,9 +442,7 @@ function planetPos(a, e, w, M0, T, t) {
   return { x: r * Math.cos(v + w), y: r * Math.sin(v + w) };
 }
 
-// ============================================================
-// === NEO SIMULATION ===
-// ============================================================
+// NEO SIMULATION 
 const PLANETS = [
   { name: 'Mercury', a: 0.387, e: 0.206, w: 1.352, M0: 3.057, T: 0.2408, color: '#B4B2A9', r: 3 },
   { name: 'Venus',   a: 0.723, e: 0.007, w: 2.296, M0: 0.874, T: 0.6152, color: '#EF9F27', r: 4 },
@@ -366,17 +466,14 @@ let apophisMode = false;
 let apophisObj = null;
 let neoLastFrame = null;
 
-// Zoom / pan state for NEO canvas
 let neoZoom = 1;
 let neoPanX = 0, neoPanY = 0;
 let neoDragging = false, neoDragStartX, neoDragStartY, neoDragMoved = false;
 
-// Performance: position cache + orbit offscreen canvas
 let posCache = null, posCacheT = null;
 let orbitCanvas = null, orbitCtx = null, orbitsDirty = true;
-// Pre-split NEOs by type at load time for fast batched rendering
 let phaNEOs = [], safeNEOs = [];
-const POS_THRESHOLD = 0.0002; // years — skip recompute below this delta
+const POS_THRESHOLD = 0.0002;
 
 function energyColor(e) {
   if (e < 1) return '#85B7EB';
@@ -396,7 +493,6 @@ function findClosestApproach(neo) {
   const earth = PLANETS[2];
   const DAY = 1 / 365.25;
   const HOUR = 1 / (365.25 * 24);
-  // Coarse scan: 2025–2035 in 1-day steps
   const tStart = (Date.UTC(2025, 0, 1) - J2000) / MS_PER_YEAR;
   const tEnd   = (Date.UTC(2035, 0, 1) - J2000) / MS_PER_YEAR;
   let bestT = tStart, bestDist = Infinity;
@@ -406,7 +502,6 @@ function findClosestApproach(neo) {
     const d = Math.hypot(e.x - a.x, e.y - a.y);
     if (d < bestDist) { bestDist = d; bestT = t; }
   }
-  // Fine scan: ±2 days around coarse minimum in 1-hour steps
   for (let t = bestT - 2 * DAY; t <= bestT + 2 * DAY; t += HOUR) {
     const e = planetPos(earth.a, earth.e, earth.w, earth.M0, earth.T, t);
     const a = neoPosition(neo, t);
@@ -428,7 +523,6 @@ function initNEO() {
   resizeNEO();
   new ResizeObserver(resizeNEO).observe(neoArea);
 
-  // ── Controls ──
   document.getElementById('neo-filter').addEventListener('change', e => { neoFilter = e.target.value; orbitsDirty = true; });
 
   document.getElementById('speed-slider').addEventListener('input', e => {
@@ -440,7 +534,7 @@ function initNEO() {
 
   document.getElementById('pause-btn').addEventListener('click', () => {
     simPaused = !simPaused;
-    neoLastFrame = null; // prevent dt burst on resume
+    neoLastFrame = null;
     document.getElementById('pause-btn').textContent = simPaused ? 'Play' : 'Pause';
   });
 
@@ -465,7 +559,6 @@ function initNEO() {
     document.getElementById('pause-btn').textContent = 'Play';
   });
 
-  // ── Zoom (scroll wheel) ──
   neoCanvas.addEventListener('wheel', e => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.12 : 0.89;
@@ -477,7 +570,6 @@ function initNEO() {
     orbitsDirty = true;
   }, { passive: false });
 
-  // ── Pan (drag) ──
   neoCanvas.addEventListener('mousedown', e => {
     neoDragging = true; neoDragMoved = false;
     neoDragStartX = e.clientX; neoDragStartY = e.clientY;
@@ -492,9 +584,8 @@ function initNEO() {
       neoDragStartX = e.clientX; neoDragStartY = e.clientY;
       orbitsDirty = true;
     } else {
-      // Hover only when not dragging
       const rect = neoCanvas.getBoundingClientRect();
-      onNEOHover(e.clientX - rect.left, e.clientY - rect.top);
+      if (!neo3dMode) onNEOHover(e.clientX - rect.left, e.clientY - rect.top);
     }
   });
 
@@ -507,7 +598,7 @@ function initNEO() {
   });
 
   neoCanvas.addEventListener('click', e => {
-    if (neoDragMoved) return; // was a pan, not a click
+    if (neoDragMoved) return;
     const rect = neoCanvas.getBoundingClientRect();
     const found = findNEOAt(e.clientX - rect.left, e.clientY - rect.top);
     clickedNEO = (found && found === clickedNEO) ? null : found;
@@ -520,6 +611,19 @@ function initNEO() {
   requestAnimationFrame(neoLoop);
 }
 
+function setNeoView(mode) {
+  neo3dMode = mode === '3d';
+  neoCanvas.style.display = neo3dMode ? 'none' : 'block';
+  document.getElementById('neo-3d-area').style.display = neo3dMode ? 'block' : 'none';
+  document.getElementById('view-2d-btn').classList.toggle('selected', !neo3dMode);
+  document.getElementById('view-3d-btn').classList.toggle('selected', neo3dMode);
+  neoLastFrame = null;
+  if (neo3dMode) {
+    if (!neo3dInitialised) initNEO3D();
+    requestAnimationFrame(neo3dLoop);
+  }
+}
+
 function resizeNEO() {
   const dpr = window.devicePixelRatio || 1;
   const w = neoArea.clientWidth, h = neoArea.clientHeight;
@@ -529,18 +633,13 @@ function resizeNEO() {
   neoCanvas.style.height = h + 'px';
   neoCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   orbitsDirty = true;
-  orbitCanvas = null; // will be recreated at correct size
+  orbitCanvas = null;
 }
 
 function getViewport() {
   const w = neoArea.clientWidth, h = neoArea.clientHeight;
   const baseScale = Math.min(w, h) / 2 / 2.2;
-  return {
-    w, h,
-    cx: w / 2 + neoPanX,
-    cy: h / 2 + neoPanY,
-    scale: baseScale * neoZoom,
-  };
+  return { w, h, cx: w / 2 + neoPanX, cy: h / 2 + neoPanY, scale: baseScale * neoZoom };
 }
 
 function findNEOAt(mx, my) {
@@ -561,7 +660,6 @@ function onNEOHover(mx, my) {
   if (neoDragging) return;
   const found = findNEOAt(mx, my);
   const { cx, cy, scale } = getViewport();
-
   if (found) {
     hoveredNEO = found;
     document.getElementById('hovered-name').textContent = found.name;
@@ -588,9 +686,10 @@ function showNEOTooltip(neo, sx, sy) {
        : '<span style="color:var(--col-neo)">Non-hazardous</span>'}<br>
      Semi-major axis: ${neo.a.toFixed(3)} AU<br>
      Eccentricity: ${neo.e.toFixed(3)}<br>
+     Inclination: ${neo.i.toFixed(1)}°<br>
      Diameter: ~${diamStr}<br>
      ${neo.miss ? 'Min miss dist: ' + neo.miss.toFixed(4) + ' AU' : ''}`;
-  const tipW = 230;
+  const tipW = 240;
   tip.style.left = (sx + 15 + tipW > w ? sx - tipW - 10 : sx + 15) + 'px';
   tip.style.top = Math.max(0, sy - 20) + 'px';
   tip.classList.add('visible');
@@ -605,7 +704,10 @@ function neoLoop(ts) {
     neoLastFrame = ts;
   }
 
-  drawNEO();
+  if (!neo3dMode) {
+    const { w, h } = getViewport();
+    if (w > 0 && h > 0) drawNEO();
+  }
 
   if (apophisMode && apophisObj) {
     const earthP = PLANETS[2];
@@ -613,7 +715,7 @@ function neoLoop(ts) {
     const aPos = neoPosition(apophisObj, simT);
     const distKm = Math.hypot(ePos.x - aPos.x, ePos.y - aPos.y) * 149597870.7;
     document.getElementById('apophis-dist').textContent =
-      'Earth–Apophis: ' + Math.round(distKm).toLocaleString() + ' km';
+      'Earth-Apophis: ' + Math.round(distKm).toLocaleString() + ' km';
   }
 
   const simDate = new Date(J2000 + simT * MS_PER_YEAR);
@@ -637,7 +739,6 @@ function drawOrbitEllipse(ctx, a, e, wRad, cx, cy, scale, strokeStyle) {
 }
 
 function getCachedPositions() {
-  // Skip Kepler recompute if time barely moved (adaptive: always recompute at high speed)
   const threshold = SPEED_STEPS[simSpeedIdx] > 10 ? 0 : POS_THRESHOLD;
   if (posCache && posCacheT !== null && Math.abs(simT - posCacheT) < threshold) return posCache;
   posCache = neoData.map(neo => neoPosition(neo, simT));
@@ -656,7 +757,6 @@ function ensureOrbitCanvas(w, h, cx, cy, scale) {
   orbitCanvas.height = h * dpr;
   orbitCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   orbitCtx.clearRect(0, 0, w, h);
-
   if (showOrbits) {
     for (const neo of neoData) {
       if (neoFilter === 'pha' && !neo.pha) continue;
@@ -673,11 +773,9 @@ function drawNEO() {
   const ctx = neoCtx;
   ctx.clearRect(0, 0, w, h);
 
-  // Blit pre-rendered orbit layer (cheap — one drawImage call)
   ensureOrbitCanvas(w, h, cx, cy, scale);
   if (orbitCanvas) ctx.drawImage(orbitCanvas, 0, 0, w, h);
 
-  // Planet orbit reference circles
   for (const p of PLANETS) {
     ctx.beginPath();
     ctx.arc(cx, cy, p.a * scale, 0, 2 * Math.PI);
@@ -686,7 +784,6 @@ function drawNEO() {
     ctx.stroke();
   }
 
-  // Sun
   const sunGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 18);
   sunGrad.addColorStop(0, '#fff9a0');
   sunGrad.addColorStop(0.4, 'rgba(255,230,80,0.8)');
@@ -694,7 +791,6 @@ function drawNEO() {
   ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
   ctx.fillStyle = sunGrad; ctx.fill();
 
-  // Planets
   for (const p of PLANETS) {
     const pos = planetPos(p.a, p.e, p.w, p.M0, p.T, simT);
     const { sx, sy } = auToScreen(pos.x, pos.y, cx, cy, scale);
@@ -709,10 +805,9 @@ function drawNEO() {
   const highlighted = clickedNEO || hoveredNEO;
   const highlightIdx = highlighted ? neoData.indexOf(highlighted) : -1;
 
-  // Batch draw: one path for safe NEOs, one for PHAs — 2 fill() calls instead of 2000
-  const drawBatch = (list, fillColor, skip) => {
+  const drawBatch = (list, fillColor) => {
     ctx.beginPath();
-    list.forEach((neo, li) => {
+    list.forEach((neo) => {
       const idx = neoData.indexOf(neo);
       if (idx === highlightIdx) return;
       if (neoFilter === 'pha' && !neo.pha) return;
@@ -730,7 +825,6 @@ function drawNEO() {
   drawBatch(safeNEOs, 'rgba(93,202,165,0.55)');
   drawBatch(phaNEOs, 'rgba(226,75,74,0.8)');
 
-  // Highlighted NEO on top
   if (highlighted) {
     const pos = positions[highlightIdx];
     if (pos) {
@@ -744,7 +838,6 @@ function drawNEO() {
     }
   }
 
-  // Apophis label
   if (apophisObj) {
     const idx = neoData.indexOf(apophisObj);
     const pos = positions[idx];
@@ -755,14 +848,269 @@ function drawNEO() {
     }
   }
 
-  // Zoom hint
   ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '11px system-ui';
-  ctx.fillText(neoZoom > 1.15 ? `Zoom ×${neoZoom.toFixed(1)}` : 'Scroll to zoom · Drag to pan', 12, h - 12);
+  ctx.fillText(neoZoom > 1.15 ? `Zoom x${neoZoom.toFixed(1)}` : 'Scroll to zoom · Drag to pan', 12, h - 12);
 }
 
-// ============================================================
-// === FIREBALL GLOBE ===
-// ============================================================
+// NEO 3D VIEW (Three.js)
+let neo3dScene, neo3dCamera, neo3dRenderer, neo3dControls;
+let neo3dPoints, neo3dPlanetMeshes = [], neo3dPlanetLabels = [], neo3dInitialised = false;
+let neo3dOrbitSafe = null, neo3dOrbitPHA = null;
+
+function buildOrbitLines3D(neoList, color, opacity) {
+  const N = 64;
+  const pos = new Float32Array(neoList.length * N * 2 * 3);
+  let vi = 0;
+  for (const neo of neoList) {
+    const ecc = Math.min(neo.e, 0.98);
+    const w = neo.w * Math.PI / 180;
+    const om = neo.omega * Math.PI / 180;
+    const inc = neo.i * Math.PI / 180;
+    const cosOm = Math.cos(om), sinOm = Math.sin(om);
+    const cosI = Math.cos(inc), sinI = Math.sin(inc);
+    const pts = new Float32Array(N * 3);
+    for (let j = 0; j < N; j++) {
+      const E = (2 * Math.PI * j) / N;
+      const v = trueAnomaly(E, ecc);
+      const r = neo.a * (1 - ecc * ecc) / (1 + ecc * Math.cos(v));
+      const theta = v + w;
+      const xOrb = r * Math.cos(theta), yOrb = r * Math.sin(theta);
+      pts[j * 3]     =  cosOm * xOrb - sinOm * cosI * yOrb;
+      pts[j * 3 + 1] =  sinI * yOrb;
+      pts[j * 3 + 2] = -(sinOm * xOrb + cosOm * cosI * yOrb);
+    }
+    for (let j = 0; j < N; j++) {
+      const next = (j + 1) % N;
+      pos[vi++] = pts[j * 3];     pos[vi++] = pts[j * 3 + 1];     pos[vi++] = pts[j * 3 + 2];
+      pos[vi++] = pts[next * 3];  pos[vi++] = pts[next * 3 + 1];  pos[vi++] = pts[next * 3 + 2];
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+}
+
+function initNEO3D() {
+  neo3dInitialised = true;
+  const container = document.getElementById('neo-3d-area');
+  const w = container.clientWidth || neoArea.clientWidth;
+  const h = container.clientHeight || neoArea.clientHeight;
+
+  neo3dScene = new THREE.Scene();
+  neo3dScene.background = new THREE.Color(0x0a0a14);
+
+  neo3dCamera = new THREE.PerspectiveCamera(45, w / h, 0.01, 200);
+  neo3dCamera.position.set(0, 3, 4);
+  neo3dCamera.lookAt(0, 0, 0);
+
+  neo3dRenderer = new THREE.WebGLRenderer({ antialias: true });
+  neo3dRenderer.setPixelRatio(window.devicePixelRatio || 1);
+  neo3dRenderer.setSize(w, h);
+  container.appendChild(neo3dRenderer.domElement);
+
+  neo3dControls = new THREE.OrbitControls(neo3dCamera, neo3dRenderer.domElement);
+  neo3dControls.enableDamping = true;
+  neo3dControls.dampingFactor = 0.05;
+  neo3dControls.minDistance = 0.5;
+  neo3dControls.maxDistance = 20;
+
+  // Sun is a canvas radial-gradient sprite (matches 2D: #fff9a0 core + transparent orange rim)
+  const sunCanvas = document.createElement('canvas');
+  sunCanvas.width = sunCanvas.height = 128;
+  const sCtx = sunCanvas.getContext('2d');
+  const sunGrad3d = sCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  sunGrad3d.addColorStop(0,    '#fff9a0');
+  sunGrad3d.addColorStop(0.25, 'rgba(255,230,80,0.9)');
+  sunGrad3d.addColorStop(0.55, 'rgba(255,180,40,0.5)');
+  sunGrad3d.addColorStop(1,    'rgba(255,120,20,0)');
+  sCtx.fillStyle = sunGrad3d;
+  sCtx.fillRect(0, 0, 128, 128);
+  const sunSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(sunCanvas), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  sunSprite.scale.set(0.38, 0.38, 1);
+  neo3dScene.add(sunSprite);
+
+  // Ambient light so scene isn't pure black
+  neo3dScene.add(new THREE.AmbientLight(0x333355));
+
+  // Planet orbit rings (in XZ plane = ecliptic)
+  const ringColors = [0x443322, 0x332244, 0x223344, 0x332222];
+  PLANETS.forEach((p, i) => {
+    const geo = new THREE.RingGeometry(p.a * 0.998, p.a * 1.002, 128);
+    const mat = new THREE.MeshBasicMaterial({ color: ringColors[i], side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.rotation.x = Math.PI / 2;
+    neo3dScene.add(ring);
+  });
+
+  // Planet spheres
+  const pColors = [0xB4B2A9, 0xEF9F27, 0x378ADD, 0xD85A30];
+  const pSizes  = [0.022, 0.030, 0.034, 0.026];
+  const pCssColors = ['#B4B2A9', '#EF9F27', '#378ADD', '#D85A30'];
+  neo3dPlanetMeshes = PLANETS.map((p, i) => {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(pSizes[i], 12, 12),
+      new THREE.MeshBasicMaterial({ color: pColors[i] })
+    );
+    neo3dScene.add(mesh);
+    return mesh;
+  });
+
+  // Planet name labels (canvas-text sprites, always face camera)
+  neo3dPlanetLabels = PLANETS.map((p, i) => {
+    const lc = document.createElement('canvas');
+    lc.width = 160; lc.height = 36;
+    const lctx = lc.getContext('2d');
+    lctx.font = 'bold 22px system-ui, sans-serif';
+    lctx.fillStyle = pCssColors[i];
+    lctx.fillText(p.name, 4, 26);
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(lc), transparent: true, depthWrite: false, depthTest: false })
+    );
+    sprite.scale.set(0.45, 0.10, 1);
+    neo3dScene.add(sprite);
+    return sprite;
+  });
+
+  // NEO orbit lines (batched into two LineSegments making it one draw call each)
+  neo3dOrbitSafe = buildOrbitLines3D(safeNEOs, 0x5DCAA5, 0.10);
+  neo3dOrbitPHA  = buildOrbitLines3D(phaNEOs,  0xE24B4A, 0.18);
+  neo3dScene.add(neo3dOrbitSafe);
+  neo3dScene.add(neo3dOrbitPHA);
+
+  // NEO point cloud
+  const count = neoData.length;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = positions[i * 3 + 1] = positions[i * 3 + 2] = 0;
+    // PHA = red, safe = teal (match 2D palette)
+    if (neoData[i].pha) { colors[i*3]=0.886; colors[i*3+1]=0.294; colors[i*3+2]=0.290; }
+    else                 { colors[i*3]=0.365; colors[i*3+1]=0.792; colors[i*3+2]=0.647; }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({ size: 0.018, vertexColors: true, sizeAttenuation: true });
+  neo3dPoints = new THREE.Points(geo, mat);
+  neo3dScene.add(neo3dPoints);
+
+  // Raycaster for hover/click in 3D mode
+  const raycaster3d = new THREE.Raycaster();
+  raycaster3d.params.Points.threshold = 0.05;
+  const mouse3d = new THREE.Vector2();
+  let neo3dDragMoved = false, neo3dDragStartX = 0, neo3dDragStartY = 0;
+
+  function neo3dScreenPos(idx) {
+    const v = new THREE.Vector3().fromBufferAttribute(neo3dPoints.geometry.attributes.position, idx);
+    v.project(neo3dCamera);
+    const cw = container.clientWidth, ch = container.clientHeight;
+    return { x: (v.x + 1) / 2 * cw, y: (1 - v.y) / 2 * ch };
+  }
+
+  neo3dRenderer.domElement.addEventListener('mousedown', e => {
+    neo3dDragMoved = false;
+    neo3dDragStartX = e.clientX; neo3dDragStartY = e.clientY;
+  });
+  neo3dRenderer.domElement.addEventListener('mousemove', e => {
+    if (Math.hypot(e.clientX - neo3dDragStartX, e.clientY - neo3dDragStartY) > 4) neo3dDragMoved = true;
+    const rect = neo3dRenderer.domElement.getBoundingClientRect();
+    mouse3d.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse3d.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster3d.setFromCamera(mouse3d, neo3dCamera);
+    const hits = raycaster3d.intersectObject(neo3dPoints);
+    if (hits.length > 0) {
+      const idx = hits[0].index;
+      const neo = neoData[idx];
+      hoveredNEO = neo;
+      document.getElementById('hovered-name').textContent = neo.name;
+      const sp = neo3dScreenPos(idx);
+      showNEOTooltip(neo, sp.x, sp.y);
+    } else if (!clickedNEO) {
+      hoveredNEO = null;
+      document.getElementById('neo-tooltip').classList.remove('visible');
+      document.getElementById('hovered-name').textContent = '—';
+    }
+  });
+  neo3dRenderer.domElement.addEventListener('mouseleave', () => {
+    if (!clickedNEO) {
+      hoveredNEO = null;
+      document.getElementById('neo-tooltip').classList.remove('visible');
+      document.getElementById('hovered-name').textContent = '—';
+    }
+  });
+  neo3dRenderer.domElement.addEventListener('click', e => {
+    if (neo3dDragMoved) return;
+    const rect = neo3dRenderer.domElement.getBoundingClientRect();
+    mouse3d.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse3d.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster3d.setFromCamera(mouse3d, neo3dCamera);
+    const hits = raycaster3d.intersectObject(neo3dPoints);
+    if (hits.length > 0) {
+      const idx = hits[0].index;
+      const neo = neoData[idx];
+      clickedNEO = (neo === clickedNEO) ? null : neo;
+      if (clickedNEO) {
+        const sp = neo3dScreenPos(idx);
+        showNEOTooltip(neo, sp.x, sp.y);
+      } else {
+        document.getElementById('neo-tooltip').classList.remove('visible');
+      }
+    } else {
+      clickedNEO = null;
+      document.getElementById('neo-tooltip').classList.remove('visible');
+    }
+  });
+
+  new ResizeObserver(() => {
+    const cw = container.clientWidth, ch = container.clientHeight;
+    neo3dCamera.aspect = cw / ch;
+    neo3dCamera.updateProjectionMatrix();
+    neo3dRenderer.setSize(cw, ch);
+  }).observe(container);
+}
+
+function neo3dLoop(ts) {
+  if (!neo3dMode) return;
+
+  // Update NEO positions in the buffer
+  if (neo3dPoints) {
+    const pos = neo3dPoints.geometry.attributes.position.array;
+    for (let i = 0; i < neoData.length; i++) {
+      const neo = neoData[i];
+      const skip = (neoFilter === 'pha' && !neo.pha) || (neoFilter === 'safe' && neo.pha);
+      if (skip) {
+        pos[i*3] = pos[i*3+1] = pos[i*3+2] = 1000; // move off-screen
+      } else {
+        const p = neoPosition3D(neo, simT);
+        // Ecliptic plane = Three.js XZ plane; inclination shows as Y spread
+        pos[i*3]   = p.x;
+        pos[i*3+1] = p.z; // inclination component → vertical
+        pos[i*3+2] = -p.y;
+      }
+    }
+    neo3dPoints.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // Update planet positions
+  PLANETS.forEach((p, i) => {
+    const pp = planetPos(p.a, p.e, p.w, p.M0, p.T, simT);
+    if (neo3dPlanetMeshes[i]) neo3dPlanetMeshes[i].position.set(pp.x, 0, -pp.y);
+    if (neo3dPlanetLabels[i]) neo3dPlanetLabels[i].position.set(pp.x + 0.06, 0.04, -pp.y);
+  });
+
+  // Sync orbit line visibility with 2D toggle + filter
+  if (neo3dOrbitSafe) neo3dOrbitSafe.visible = showOrbits && neoFilter !== 'pha';
+  if (neo3dOrbitPHA)  neo3dOrbitPHA.visible  = showOrbits && neoFilter !== 'safe';
+
+  neo3dControls.update();
+  neo3dRenderer.render(neo3dScene, neo3dCamera);
+  requestAnimationFrame(neo3dLoop);
+}
+
+
+// FIREBALL GLOBE 
 let globeCanvas, globeCtx, globeArea;
 let projection, geoPath;
 let fbPaused = false;
@@ -792,7 +1140,6 @@ function initGlobe() {
   updateGlobeProjection();
   geoPath = d3.geoPath(projection, globeCtx);
 
-  // ── Mouse drag ──
   globeCanvas.addEventListener('mousedown', e => {
     globeDragging = true; globeLastX = e.clientX; globeLastY = e.clientY;
   });
@@ -803,12 +1150,9 @@ function initGlobe() {
     globeLastX = e.clientX; globeLastY = e.clientY;
   });
 
-  // ── Touch drag ──
   let lastTouch = null;
   globeCanvas.addEventListener('touchstart', e => {
-    e.preventDefault();
-    lastTouch = e.touches[0];
-    globeDragging = true;
+    e.preventDefault(); lastTouch = e.touches[0]; globeDragging = true;
   }, { passive: false });
   globeCanvas.addEventListener('touchmove', e => {
     e.preventDefault();
@@ -819,7 +1163,6 @@ function initGlobe() {
   }, { passive: false });
   globeCanvas.addEventListener('touchend', () => { globeDragging = false; lastTouch = null; });
 
-  // ── Zoom (wheel) ──
   globeCanvas.addEventListener('wheel', e => {
     e.preventDefault();
     globeZoom *= e.deltaY < 0 ? 1.1 : 0.91;
@@ -827,7 +1170,6 @@ function initGlobe() {
     updateGlobeProjection();
   }, { passive: false });
 
-  // ── Hover + click ──
   globeCanvas.addEventListener('mousemove', e => {
     if (globeDragging || fbClickedEvent) return;
     const rect = globeCanvas.getBoundingClientRect();
@@ -849,26 +1191,22 @@ function initGlobe() {
     }
   });
 
-  // ── Controls ──
   document.getElementById('energy-slider').addEventListener('input', e => {
     fbMinEnergy = +e.target.value;
     document.getElementById('energy-label').textContent = fbMinEnergy;
     updateFBStats();
   });
-
-  // Timeline seek bar
   document.getElementById('fb-timeline').addEventListener('input', e => {
     fbTime = +e.target.value / 1000;
-    fbLastFrame = null; // prevent jump when resuming
+    fbLastFrame = null;
   });
-
   document.getElementById('fb-speed-slider').addEventListener('input', e => {
     fbSpeedIdx = +e.target.value;
     document.getElementById('fb-speed-label').textContent = '×' + FB_SPEED_STEPS[fbSpeedIdx];
   });
   document.getElementById('fb-play-btn').addEventListener('click', () => {
     fbPaused = !fbPaused;
-    fbLastFrame = null; // prevent dt burst on resume
+    fbLastFrame = null;
     document.getElementById('fb-play-btn').textContent = fbPaused ? 'Play' : 'Pause';
   });
   document.getElementById('fb-reset-btn').addEventListener('click', () => {
@@ -912,7 +1250,7 @@ function updateFBStats() {
     document.getElementById('fb-max').textContent = maxE >= 1 ? maxE.toFixed(1) + ' kt' : (maxE * 1000).toFixed(0) + ' t';
   }
   const dates = sortedEvents.map(e => e.date && e.date.slice(0, 4)).filter(Boolean);
-  if (dates.length) document.getElementById('fb-range').textContent = dates[0] + ' – ' + dates[dates.length - 1];
+  if (dates.length) document.getElementById('fb-range').textContent = dates[0] + ' - ' + dates[dates.length - 1];
 }
 
 function visibleEvents() {
@@ -939,10 +1277,8 @@ function onGlobeHover(mx, my) {
 
 function showFBTooltip(ev, x, y) {
   const tip = document.getElementById('fb-tooltip');
-  const isChelyabinsk = ev.date && ev.date.startsWith('2013-02-15');
   tip.innerHTML =
-    `<strong>${ev.date ? ev.date.slice(0, 10) : 'Unknown date'}</strong>
-     ${isChelyabinsk ? '<br><span style="color:var(--col-high)">&#9888; Chelyabinsk Event</span>' : ''}<br>
+    `<strong>${ev.date ? ev.date.slice(0, 10) : 'Unknown date'}</strong><br>
      Energy: <strong>${ev.energy} kt TNT</strong><br>
      Lat: ${ev.lat.toFixed(1)}°, Lon: ${ev.lon.toFixed(1)}°
      ${ev.vel ? '<br>Velocity: ' + ev.vel.toFixed(1) + ' km/s' : ''}
@@ -961,14 +1297,11 @@ function globeLoop(ts) {
     }
     fbLastFrame = ts;
   }
-
-  // Sync timeline seek bar and date label
   document.getElementById('fb-timeline').value = Math.round(fbTime * 1000);
   const cutoff = Math.ceil(fbTime * sortedEvents.length);
   if (cutoff > 0 && cutoff <= sortedEvents.length) {
     document.getElementById('fb-date-label').textContent = sortedEvents[cutoff - 1].date.slice(0, 10);
   }
-
   drawGlobe();
   requestAnimationFrame(globeLoop);
 }
@@ -994,25 +1327,9 @@ function drawGlobe() {
     ctx.fillStyle = energyColor(ev.energy); ctx.globalAlpha = 0.75; ctx.fill(); ctx.globalAlpha = 1;
   }
 
-  // Chelyabinsk callout on globe
-  const chely = sortedEvents.find(e => e.date && e.date.startsWith('2013-02-15'));
-  if (chely && fbTime * sortedEvents.length >= sortedEvents.indexOf(chely)) {
-    const pt = projection([chely.lon, chely.lat]);
-    if (pt) {
-      const r = energyToRadius(chely.energy);
-      ctx.beginPath(); ctx.arc(pt[0], pt[1], r + 5, 0, 2 * Math.PI);
-      ctx.strokeStyle = '#E24B4A'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1;
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui';
-      ctx.fillText('Chelyabinsk 2013', pt[0] + r + 6, pt[1] - 5);
-      ctx.font = '10px system-ui'; ctx.fillStyle = '#EF9F27';
-      ctx.fillText('440 kt · 1,500 injured', pt[0] + r + 6, pt[1] + 8);
-    }
-  }
 }
 
-// ============================================================
-// === COMPANION CHARTS ===
-// ============================================================
+// COMPANION CHARTS
 function buildCompanionCharts(events) {
   requestAnimationFrame(() => {
     drawEnergyHistogram(events);
@@ -1038,10 +1355,10 @@ function drawEnergyHistogram(events) {
     .attr('fill', d => energyColor(Math.pow(10, (d.x0 + d.x1) / 2)));
   g.append('g').attr('transform', `translate(0,${h})`).call(d3.axisBottom(x).ticks(5).tickFormat(d => `10^${d}`));
   g.append('g').call(d3.axisLeft(y).ticks(3));
-  const cx = x(Math.log10(440));
+  const cx = x(Math.log10(15));
   g.append('line').attr('x1', cx).attr('x2', cx).attr('y1', 0).attr('y2', h)
-    .attr('stroke', '#E24B4A').attr('stroke-dasharray', '3,2').attr('stroke-width', 1.5);
-  g.append('text').attr('x', cx + 3).attr('y', 12).attr('fill', '#E24B4A').style('font-size', '9px').text('Chelyabinsk');
+    .attr('stroke', '#EF9F27').attr('stroke-dasharray', '3,2').attr('stroke-width', 1.5);
+  g.append('text').attr('x', cx + 3).attr('y', 12).attr('fill', '#EF9F27').style('font-size', '9px').text('Hiroshima (~15 kt)');
 }
 
 function drawSeasonalBar(events) {
@@ -1073,7 +1390,6 @@ function drawYearlyBar(events) {
   const m = { top: 8, right: 10, bottom: 26, left: 28 };
   const w = W - m.left - m.right, h = H - m.top - m.bottom;
   const svg = d3.select('#yearly-bar').attr('width', W).attr('height', H);
-
   const yearCounts = {};
   for (const ev of events) {
     const yr = (ev.date || '').slice(0, 4);
@@ -1081,20 +1397,14 @@ function drawYearlyBar(events) {
   }
   const years = Object.keys(yearCounts).sort();
   const data = years.map(yr => ({ yr, count: yearCounts[yr] }));
-
   const x = d3.scaleBand().domain(years).range([0, w]).padding(0.08);
   const y = d3.scaleLinear().domain([0, d3.max(data, d => d.count)]).range([h, 0]);
-
   const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
-
-  // Colour bars by era: pre-2008 (older sensors) dimmer, post-2008 brighter
   g.selectAll('rect').data(data).join('rect')
     .attr('x', d => x(d.yr)).attr('width', x.bandwidth())
     .attr('y', d => y(d.count)).attr('height', d => h - y(d.count))
     .attr('fill', d => +d.yr >= 2008 ? '#5DCAA5' : '#378ADD')
     .attr('opacity', 0.85);
-
-  // Sensor upgrade annotation
   const upgradeX = x('2008');
   if (upgradeX !== undefined) {
     g.append('line').attr('x1', upgradeX).attr('x2', upgradeX).attr('y1', 0).attr('y2', h)
@@ -1102,12 +1412,156 @@ function drawYearlyBar(events) {
     g.append('text').attr('x', upgradeX + 2).attr('y', 10)
       .attr('fill', '#EF9F27').style('font-size', '8px').text('Sensors upgraded');
   }
-
-  // x-axis: show every ~4th year to avoid crowding
   g.append('g').attr('transform', `translate(0,${h})`).call(
     d3.axisBottom(x).tickValues(years.filter((_, i) => i % 4 === 0))
   );
   g.append('g').call(d3.axisLeft(y).ticks(3));
+}
+
+// RISK MATRIX
+let riskClickedObj = null;
+
+function psColor(ps) {
+  if (ps === null || ps === undefined) return 'rgba(80,80,110,0.4)';
+  if (ps > 0)   return '#E24B4A';
+  if (ps > -2)  return '#EF9F27';
+  if (ps > -4)  return '#85B7EB';
+  return 'rgba(80,80,110,0.45)';
+}
+
+function buildRiskMatrix(data) {
+  if (!data || !data.length) return;
+  const area = document.getElementById('risk-area');
+  const W = area.clientWidth || 800;
+  const H = area.clientHeight || 600;
+  const m = { top: 50, right: 30, bottom: 60, left: 85 };
+  const w = W - m.left - m.right, h = H - m.top - m.bottom;
+
+  const svg = d3.select('#risk-matrix').attr('width', W).attr('height', H);
+  const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
+
+  const yearExtent = d3.extent(data, d => d.year);
+  const xScale = d3.scaleLinear().domain([yearExtent[0] - 5, yearExtent[1] + 10]).range([0, w]);
+  const yScale = d3.scaleLog().domain([1e-10, 1]).range([h, 0]).clamp(true);
+
+  const sizeR = d => d.diam ? Math.max(3, Math.min(20, Math.sqrt(d.diam) * 9)) : 4;
+
+  // Axis
+  g.append('g').attr('transform', `translate(0,${h})`)
+    .call(d3.axisBottom(xScale).tickFormat(d3.format('d')).ticks(8));
+  g.append('g')
+    .call(d3.axisLeft(yScale).ticks(6, '.0e'));
+
+  // Axis labels
+  g.append('text').attr('x', w / 2).attr('y', h + 48).attr('text-anchor', 'middle')
+    .attr('fill', '#888aaa').style('font-size', '12px').text('Predicted impact year');
+  g.append('text').attr('transform', 'rotate(-90)').attr('x', -h / 2).attr('y', -68)
+    .attr('text-anchor', 'middle').attr('fill', '#888aaa').style('font-size', '12px')
+    .text('Cumulative impact probability');
+
+  // Title
+  g.append('text').attr('x', w / 2).attr('y', -28).attr('text-anchor', 'middle')
+    .attr('fill', '#e0e0f0').style('font-size', '14px').style('font-weight', '600')
+    .text('NASA Sentry Impact-Risk Catalogue');
+  g.append('text').attr('x', w / 2).attr('y', -12).attr('text-anchor', 'middle')
+    .attr('fill', '#888aaa').style('font-size', '11px')
+    .text('Each bubble = 1 monitored object · size = estimated diameter · color = Palermo scale');
+
+  // Background grid
+  g.append('g').attr('class', 'grid')
+    .call(d3.axisLeft(yScale).ticks(6).tickSize(-w).tickFormat(''))
+    .select('.domain').remove();
+  g.selectAll('.grid .tick line').attr('stroke', 'rgba(255,255,255,0.04)');
+
+  // Bubbles
+  const tooltip = document.getElementById('risk-tooltip');
+  const validData = data.filter(d => d.ip > 0);
+
+  const circles = g.selectAll('circle').data(validData).join('circle')
+    .attr('cx', d => xScale(d.year))
+    .attr('cy', d => yScale(Math.max(1e-10, d.ip)))
+    .attr('r', sizeR)
+    .attr('fill', d => psColor(d.ps))
+    .attr('opacity', 0.72)
+    .attr('stroke', d => d.ts >= 1 ? '#fff' : 'none')
+    .attr('stroke-width', 1.5)
+    .style('cursor', 'pointer');
+
+  circles.on('mouseover', function(event, d) {
+    d3.select(this).attr('opacity', 1).attr('stroke', '#fff').attr('stroke-width', 1.5);
+    const ipStr = d.ip < 0.001
+      ? `1 in ${Math.round(1 / d.ip).toLocaleString()}`
+      : (d.ip * 100).toFixed(3) + '%';
+    const eStr = d.energy
+      ? (d.energy > 1
+          ? d.energy.toFixed(1) + ' Mt'
+          : (d.energy * 1000).toFixed(0) + ' kt')
+        + ` (≈ ${Math.round(d.energy / 0.015).toLocaleString()}× Hiroshima)`
+      : 'unknown';
+    tooltip.innerHTML =
+      `<strong>${(d.fullname || d.des).replace(/[()]/g, '').trim()}</strong><br>
+       Probability: <strong>${ipStr}</strong><br>
+       Year range: ${d.range}<br>
+       Palermo scale: ${d.ps !== null ? d.ps.toFixed(2) : '—'}<br>
+       Torino scale: ${d.ts !== null ? d.ts.toFixed(0) : '—'}<br>
+       Possible impacts: ${d.n_imp || '—'}<br>
+       Est. energy: ${eStr}<br>
+       Diameter: ${d.diam ? d.diam.toFixed(2) + ' km' : 'unknown'}<br>
+       Last observed: ${d.last_obs || '—'}`;
+    const rect = area.getBoundingClientRect();
+    const ex = event.clientX - rect.left, ey = event.clientY - rect.top;
+    const tipW = 260;
+    tooltip.style.left = (ex + 15 + tipW > area.clientWidth ? ex - tipW - 10 : ex + 15) + 'px';
+    tooltip.style.top = Math.max(0, ey - 20) + 'px';
+    tooltip.classList.add('visible');
+  }).on('mouseout', function(event, d) {
+    d3.select(this)
+      .attr('opacity', 0.72)
+      .attr('stroke', d.ts >= 1 ? '#fff' : 'none');
+    if (!riskClickedObj) tooltip.classList.remove('visible');
+  }).on('click', function(event, d) {
+    riskClickedObj = (riskClickedObj === d) ? null : d;
+    if (!riskClickedObj) tooltip.classList.remove('visible');
+  });
+
+  // Label top-10 by Palermo (shown when toggle checked)
+  const topN = [...validData].sort((a, b) => (b.ps || -99) - (a.ps || -99)).slice(0, 10);
+  const labelGroup = g.append('g').attr('id', 'risk-labels').style('display', 'none');
+  labelGroup.selectAll('text').data(topN).join('text')
+    .attr('x', d => xScale(d.year) + sizeR(d) + 3)
+    .attr('y', d => yScale(Math.max(1e-10, d.ip)) + 4)
+    .attr('fill', '#e0e0f0').style('font-size', '9px').style('pointer-events', 'none')
+    .text(d => (d.fullname || d.des).replace(/[()]/g, '').trim());
+
+  // Click-away to depin
+  svg.on('click', function(event) {
+    if (event.target.tagName !== 'circle') {
+      riskClickedObj = null;
+      tooltip.classList.remove('visible');
+    }
+  });
+
+  // Label toggle
+  document.getElementById('risk-label-toggle').addEventListener('change', e => {
+    document.getElementById('risk-labels').style.display = e.target.checked ? null : 'none';
+  });
+
+  // IP filter slider
+  document.getElementById('risk-ip-slider').addEventListener('input', e => {
+    const minIp = Math.pow(10, +e.target.value);
+    document.getElementById('risk-ip-label').textContent = minIp.toExponential(0);
+    circles.attr('display', d => d.ip >= minIp ? null : 'none');
+    labelGroup.selectAll('text').attr('display', d => d.ip >= minIp ? null : 'none');
+  });
+
+  // Stat cards
+  document.getElementById('risk-count').textContent = data.length.toLocaleString();
+  const topTs = d3.max(data, d => d.ts || 0);
+  document.getElementById('risk-top-ts').textContent = topTs != null ? (+topTs).toFixed(0) : '—';
+  const topPs = d3.max(data, d => d.ps != null ? +d.ps : -99);
+  document.getElementById('risk-top-ps').textContent = topPs != null && topPs > -99 ? topPs.toFixed(2) : '—';
+  const nearest = data.reduce((best, d) => (!best || d.year < best.year) ? d : best, null);
+  document.getElementById('risk-nearest').textContent = nearest ? nearest.year.toString() : '—';
 }
 </script>
 </body>

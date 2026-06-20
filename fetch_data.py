@@ -3,15 +3,20 @@ Fetch and clean both datasets. Run once before opening index.html.
 Output: data/fireballs.json, data/neos.json, data/meta.json
 """
 
-import os, requests, json, math, time
+import json
+import math
+import os
+import time
 from pathlib import Path
+
+import requests
 
 OUT = Path("data")
 OUT.mkdir(exist_ok=True)
 
 API_KEY = os.environ.get("NASA_API_KEY", "DEMO_KEY")
 
-# --- Fireballs ---
+# Fireballs
 FIREBALL_URL = "https://ssd-api.jpl.nasa.gov/fireball.api"
 params = {"limit": 1000, "req-loc": "true", "req-alt": "true", "req-vel": "true"}
 resp = requests.get(FIREBALL_URL, params=params, timeout=30)
@@ -36,7 +41,7 @@ for row in raw["data"]:
 (OUT / "fireballs.json").write_text(json.dumps(events, indent=2))
 print(f"Fireballs: {len(events)} events written")
 
-# --- NEOs ---
+# NEOs
 NEO_URL = "https://api.nasa.gov/neo/rest/v1/neo/browse"
 neos = []
 page, page_size = 0, 20
@@ -88,12 +93,67 @@ while len(neos) < target:
 (OUT / "neos.json").write_text(json.dumps(neos[:target], indent=2))
 print(f"NEOs: {len(neos[:target])} objects written")
 
-# --- Meta ---
+# Sentry (JPL impact-risk catalogue)
+SENTRY_URL = "https://ssd-api.jpl.nasa.gov/sentry.api"
+resp_s = requests.get(SENTRY_URL, timeout=30)
+resp_s.raise_for_status()
+raw_s = resp_s.json()
+
+sentry = []
+for obj in raw_s.get("data", []):
+    # Parse first year from range string: "2178-2290" or "2101"
+    range_str = obj.get("range", "")
+    try:
+        year = int(range_str.split("-")[0])
+    except (ValueError, IndexError):
+        continue
+    def _f(key, fallback=None):
+        v = obj.get(key)
+        if v is None or v == '':
+            return fallback
+        try:
+            result = float(v)
+            return fallback if math.isnan(result) or math.isinf(result) else result
+        except (TypeError, ValueError):
+            return fallback
+    diam = _f("diameter") # km
+    v_inf = _f("v_inf") # km/s (hyperbolic excess velocity)
+    # Approximate impact energy (Mt TNT): v_imp = sqrt(v_inf^2 + 11.2^2), density ~2000 kg/m^3
+    energy_mt = None
+    if diam and v_inf:
+        v_imp_kms = math.sqrt(v_inf**2 + 11.2**2)
+        r_m = (diam * 1000) / 2
+        mass_kg = (4 / 3) * math.pi * r_m**3 * 2000
+        ke_j = 0.5 * mass_kg * (v_imp_kms * 1000)**2
+        energy_mt = round(ke_j / 4.184e15, 4) # 1 Mt TNT = 4.184e15 J
+    sentry.append({
+        "des":      obj.get("des", ""),
+        "fullname": obj.get("fullname", obj.get("des", "")),
+        "ip":       _f("ip"),      # cumulative impact probability
+        "ps":       _f("ps_cum"),  # Palermo scale (cumulative)
+        "ps_max":   _f("ps_max"),  # Palermo scale (max single event)
+        "ts":       _f("ts_max"),  # Torino scale (max)
+        "diam":     diam,          # km
+        "h":        _f("h"),       # absolute magnitude
+        "v_inf":    v_inf,         # km/s
+        "energy":   energy_mt,     # Mt TNT (estimated)
+        "n_imp":    int(obj["n_imp"]) if obj.get("n_imp") else None,
+        "range":    range_str,
+        "year":     year,
+        "last_obs": obj.get("last_obs", ""),
+    })
+
+(OUT / "sentry.json").write_text(json.dumps(sentry, indent=2))
+print(f"Sentry: {len(sentry)} impact-risk objects written")
+
+# Meta
 (OUT / "meta.json").write_text(json.dumps({
     "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "fireball_count": len(events),
     "neo_count": len(neos[:target]),
+    "sentry_count": len(sentry),
     "fireball_source": FIREBALL_URL,
     "neo_source": NEO_URL,
+    "sentry_source": SENTRY_URL,
 }, indent=2))
 print("Done.")
